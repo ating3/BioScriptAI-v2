@@ -1,0 +1,183 @@
+/**
+ * Service Worker - Main Orchestrator
+ * Based on ARCHITECTURE.md
+ */
+
+import { ContextManager } from '../core/context-manager.js';
+import { LLMService } from '../services/llm-service.js';
+import { ZoteroService } from '../services/zotero-service.js';
+import { QAModule } from '../modules/qa-module.js';
+import { SummarizationModule } from '../modules/summarization-module.js';
+
+// Initialize services
+const contextManager = new ContextManager();
+const llmService = new LLMService();
+const zoteroService = new ZoteroService();
+const qaModule = new QAModule(llmService);
+const summarizationModule = new SummarizationModule(llmService);
+
+// Load settings
+let settings = {
+  screenInferenceEnabled: true,
+  cloudAccelerationEnabled: false,
+  llmBaseUrl: 'http://localhost:8000'
+};
+
+chrome.storage.local.get(['settings'], (result) => {
+  if (result.settings) {
+    settings = { ...settings, ...result.settings };
+  }
+});
+
+/**
+ * Handle sidebar opening
+ */
+chrome.action.onClicked.addListener((tab) => {
+  chrome.sidePanel.open({ tabId: tab.id });
+});
+
+/**
+ * Handle messages from content script
+ */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'getVisibleContext') {
+    // Forward to content script
+    chrome.tabs.sendMessage(sender.tab.id, { action: 'getVisibleContext' }, (response) => {
+      if (response && response.text) {
+        contextManager.updateFromVisibleChunk(response);
+      }
+      sendResponse(response);
+    });
+    return true;
+  }
+
+  if (request.action === 'scrollDetected') {
+    if (settings.screenInferenceEnabled) {
+      // Capture visible context on scroll
+      chrome.tabs.sendMessage(sender.tab.id, { action: 'getVisibleContext' }, (response) => {
+        if (response && response.text) {
+          contextManager.updateFromVisibleChunk(response);
+        }
+      });
+    }
+    return true;
+  }
+
+  if (request.action === 'answerQuestion') {
+    handleAnswerQuestion(request, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'summarize') {
+    handleSummarize(request, sendResponse);
+    return true;
+  }
+
+  if (request.action === 'getContext') {
+    const context = contextManager.buildPromptContext({
+      researchFocus: request.researchFocus,
+      conversationHistory: request.conversationHistory
+    });
+    sendResponse({ context });
+    return true;
+  }
+});
+
+/**
+ * Handle QA request
+ */
+async function handleAnswerQuestion(request, sendResponse) {
+  try {
+    const context = contextManager.buildPromptContext({
+      researchFocus: request.researchFocus,
+      conversationHistory: request.conversationHistory
+    });
+
+    const answer = await qaModule.answerQuestion({
+      question: request.question,
+      context,
+      researchFocus: request.researchFocus,
+      conversationHistory: request.conversationHistory
+    });
+
+    sendResponse({ success: true, answer });
+  } catch (error) {
+    console.error('QA error:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle summarization request
+ */
+async function handleSummarize(request, sendResponse) {
+  try {
+    const context = contextManager.getMinimalContextForLLM();
+    
+    const summary = await summarizationModule.summarize({
+      paperContext: context || request.paperContext,
+      summaryGoal: request.summaryGoal || 'balanced',
+      focusWeight: request.focusWeight || 'medium',
+      userResearchContext: request.userResearchContext
+    });
+
+    sendResponse({ success: true, summary });
+  } catch (error) {
+    console.error('Summarization error:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle Zotero operations
+ */
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'zotero') {
+    handleZoteroRequest(request, sendResponse);
+    return true;
+  }
+});
+
+async function handleZoteroRequest(request, sendResponse) {
+  try {
+    const { operation, params } = request;
+
+    switch (operation) {
+      case 'initialize':
+        const success = await zoteroService.initialize(params.apiKey);
+        sendResponse({ success });
+        break;
+
+      case 'createCollection':
+        const collectionKey = await zoteroService.createCollection(params.name);
+        sendResponse({ success: true, collectionKey });
+        break;
+
+      case 'listCollections':
+        const collections = await zoteroService.listCollections();
+        sendResponse({ success: true, collections });
+        break;
+
+      case 'createItem':
+        const itemKey = await zoteroService.createItem(params.itemData);
+        sendResponse({ success: true, itemKey });
+        break;
+
+      case 'addItemToCollection':
+        await zoteroService.addItemToCollection(params.itemKey, params.collectionKey);
+        sendResponse({ success: true });
+        break;
+
+      case 'exportCollection':
+        const exportData = await zoteroService.exportCollection(params.collectionKey, params.format);
+        sendResponse({ success: true, data: exportData });
+        break;
+
+      default:
+        sendResponse({ success: false, error: 'Unknown operation' });
+    }
+  } catch (error) {
+    console.error('Zotero error:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}

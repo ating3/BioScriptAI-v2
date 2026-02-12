@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bioscriptai.dev/schemas/project-management-flows.json",
+  "title": "BioScriptAI v2.0 — Project Management Flows",
+  "description": "Workflows, UI states, and LLM prompt hooks for project management.",
+  "version": "2.0.0",
+
+  "ui_states": {
+    "sidebar": {
+      "workspace_tab": "sidebar.workspace.active_tab",
+      "papers_list": "sidebar.workspace.papers",
+      "projects_list": "sidebar.workspace.projects",
+      "project_detail": "sidebar.workspace.project_detail",
+      "paper_detail": "sidebar.workspace.paper_detail"
+    },
+    "modals": {
+      "create_project": "modal.create_project",
+      "rename_project": "modal.rename_project",
+      "delete_project_confirm": "modal.delete_project_confirm",
+      "add_paper_to_project": "modal.add_paper_to_project",
+      "edit_tags": "modal.edit_tags",
+      "add_annotation": "modal.add_annotation",
+      "export_bibliography": "modal.export_bibliography",
+      "recommendations": "modal.recommendations"
+    },
+    "context_bar": "sidebar.paper_context_bar",
+    "toast": "global.toast"
+  },
+
+  "workflows": [
+    {
+      "id": "create_research_project",
+      "name": "Creating a research project",
+      "trigger": "user_click",
+      "trigger_source": "sidebar.workspace.projects.empty_state_cta | sidebar.workspace.projects.header_action",
+      "steps": [
+        {
+          "step_id": "open_create_modal",
+          "action": "open_modal",
+          "ui_state": "modal.create_project",
+          "payload": { "default_name": "" },
+          "next_step": "user_fills_name"
+        },
+        {
+          "step_id": "user_fills_name",
+          "action": "user_input",
+          "ui_state": "modal.create_project",
+          "payload": { "field": "project_name", "required": true },
+          "next_step": "submit_create"
+        },
+        {
+          "step_id": "submit_create",
+          "action": "api_call",
+          "api": "zotero_create_collection",
+          "payload": { "name": "{{project_name}}" },
+          "ui_state": "modal.create_project",
+          "loading_state": "modal.create_project.loading",
+          "on_success": { "transition_to": "sidebar.workspace.projects", "invalidate": "projects_list", "toast": "Project created" },
+          "on_error": { "stay": "modal.create_project", "toast": "error_message" }
+        }
+      ],
+      "llm_prompt_hooks": []
+    },
+    {
+      "id": "add_papers_to_project",
+      "name": "Adding papers to a project",
+      "trigger": "user_click | context_bar_action",
+      "trigger_source": "sidebar.workspace.papers.item_action_add_to_project | sidebar.paper_context_bar.save_to_project | current_paper_toolbar",
+      "steps": [
+        {
+          "step_id": "resolve_paper",
+          "action": "resolve_context",
+          "payload": { "source": "current_paper | selected_paper_item", "output": "paper_metadata_and_key" },
+          "ui_state": "sidebar.workspace.papers | sidebar.paper_context_bar",
+          "next_step": "open_project_picker"
+        },
+        {
+          "step_id": "open_project_picker",
+          "action": "open_modal",
+          "ui_state": "modal.add_paper_to_project",
+          "payload": { "paper": "{{resolved_paper}}", "projects_list": "{{projects}}" },
+          "next_step": "user_selects_project"
+        },
+        {
+          "step_id": "user_selects_project",
+          "action": "user_select",
+          "ui_state": "modal.add_paper_to_project",
+          "payload": { "multi": false, "options_from": "projects_list" },
+          "next_step": "submit_add"
+        },
+        {
+          "step_id": "submit_add",
+          "action": "api_call",
+          "api": "zotero_patch_item_collections",
+          "payload": { "item_key": "{{paper_key}}", "collection_key": "{{selected_project_key}}", "merge": true },
+          "ui_state": "modal.add_paper_to_project",
+          "loading_state": "modal.add_paper_to_project.loading",
+          "on_success": { "transition_to": "sidebar.workspace.papers", "invalidate": "papers_list", "toast": "Added to project" },
+          "on_error": { "stay": "modal.add_paper_to_project", "toast": "error_message" }
+        }
+      ],
+      "llm_prompt_hooks": []
+    },
+    {
+      "id": "tagging_and_annotating_papers",
+      "name": "Tagging and annotating papers",
+      "trigger": "user_click",
+      "trigger_source": "sidebar.workspace.papers.item_action_edit_tags | sidebar.workspace.paper_detail.tags_section | sidebar.workspace.paper_detail.add_annotation",
+      "steps": [
+        {
+          "step_id": "open_edit_tags",
+          "action": "open_modal",
+          "ui_state": "modal.edit_tags",
+          "payload": { "paper_key": "{{item_key}}", "current_tags": "{{item.data.tags}}", "suggestions": "{{tag_suggestions}}" },
+          "next_step": "user_edits_tags"
+        },
+        {
+          "step_id": "user_edits_tags",
+          "action": "user_input",
+          "ui_state": "modal.edit_tags",
+          "payload": { "add_remove_tags": true, "optional_llm_suggest": "tag_suggestions" },
+          "next_step": "submit_tags"
+        },
+        {
+          "step_id": "submit_tags",
+          "action": "api_call",
+          "api": "zotero_patch_item",
+          "payload": { "item_key": "{{item_key}}", "tags": "{{new_tags}}" },
+          "ui_state": "modal.edit_tags",
+          "loading_state": "modal.edit_tags.loading",
+          "on_success": { "transition_to": "sidebar.workspace.paper_detail", "invalidate": "paper_detail", "toast": "Tags updated" },
+          "on_error": { "stay": "modal.edit_tags", "toast": "error_message" }
+        },
+        {
+          "step_id": "open_add_annotation",
+          "action": "open_modal",
+          "ui_state": "modal.add_annotation",
+          "payload": { "paper_key": "{{item_key}}", "paper_title": "{{title}}", "selection_context": "{{optional_selection}}" },
+          "next_step": "user_writes_annotation"
+        },
+        {
+          "step_id": "user_writes_annotation",
+          "action": "user_input",
+          "ui_state": "modal.add_annotation",
+          "payload": { "field": "annotation_note", "multiline": true },
+          "next_step": "submit_annotation"
+        },
+        {
+          "step_id": "submit_annotation",
+          "action": "api_call",
+          "api": "zotero_create_child_note",
+          "payload": { "parent_item_key": "{{item_key}}", "note_content": "{{annotation_note}}" },
+          "ui_state": "modal.add_annotation",
+          "loading_state": "modal.add_annotation.loading",
+          "on_success": { "transition_to": "sidebar.workspace.paper_detail", "invalidate": "paper_detail", "toast": "Annotation saved" },
+          "on_error": { "stay": "modal.add_annotation", "toast": "error_message" }
+        }
+      ],
+      "llm_prompt_hooks": [
+        { "hook_id": "tag_suggestions", "when": "optional", "prompt_ref": "suggest_tags_for_paper" }
+      ]
+    },
+    {
+      "id": "viewing_project_overview",
+      "name": "Viewing project overview",
+      "trigger": "user_click | navigation",
+      "trigger_source": "sidebar.workspace.projects.item_click | breadcrumb",
+      "steps": [
+        {
+          "step_id": "load_project_detail",
+          "action": "load_data",
+          "api": "zotero_get_collection",
+          "payload": { "collection_key": "{{project_key}}" },
+          "ui_state": "sidebar.workspace.project_detail",
+          "loading_state": "sidebar.workspace.project_detail.loading",
+          "next_step": "render_overview"
+        },
+        {
+          "step_id": "render_overview",
+          "action": "render",
+          "ui_state": "sidebar.workspace.project_detail",
+          "payload": {
+            "sections": ["header", "paper_count", "papers_list", "tags_summary", "optional_summary_insight"]
+          },
+          "llm_prompt_hook": "project_overview_insight"
+        }
+      ],
+      "llm_prompt_hooks": [
+        { "hook_id": "project_overview_insight", "when": "optional", "prompt_ref": "project_overview_insight" }
+      ]
+    },
+    {
+      "id": "exporting_project_bibliography",
+      "name": "Exporting project bibliography",
+      "trigger": "user_click",
+      "trigger_source": "sidebar.workspace.project_detail.export_button | sidebar.workspace.projects.item_action_export",
+      "steps": [
+        {
+          "step_id": "open_export_modal",
+          "action": "open_modal",
+          "ui_state": "modal.export_bibliography",
+          "payload": { "project_key": "{{project_key}}", "project_name": "{{project_name}}", "formats": ["apa", "mla", "bibtex"] },
+          "next_step": "user_selects_format"
+        },
+        {
+          "step_id": "user_selects_format",
+          "action": "user_select",
+          "ui_state": "modal.export_bibliography",
+          "payload": { "options": ["APA", "MLA", "BibTeX"] },
+          "next_step": "generate_export"
+        },
+        {
+          "step_id": "generate_export",
+          "action": "api_call",
+          "api": "zotero_export_collection",
+          "payload": { "collection_key": "{{project_key}}", "format": "{{selected_format}}" },
+          "ui_state": "modal.export_bibliography",
+          "loading_state": "modal.export_bibliography.loading",
+          "on_success": { "stay": "modal.export_bibliography", "show_preview_and_copy", "toast": "Export ready" },
+          "on_error": { "stay": "modal.export_bibliography", "toast": "error_message" }
+        }
+      ],
+      "llm_prompt_hooks": []
+    },
+    {
+      "id": "recommend_next_papers",
+      "name": "Recommending next relevant papers based on project context",
+      "trigger": "user_click | auto_suggest",
+      "trigger_source": "sidebar.workspace.project_detail.recommend_button | sidebar.workspace.projects.item_action_recommend",
+      "steps": [
+        {
+          "step_id": "gather_project_context",
+          "action": "load_data",
+          "api": "local_get_project_context",
+          "payload": { "project_key": "{{project_key}}", "include": ["titles", "abstracts", "keywords", "tags"] },
+          "ui_state": "sidebar.workspace.project_detail",
+          "loading_state": "sidebar.workspace.project_detail.loading",
+          "next_step": "build_recommendation_prompt"
+        },
+        {
+          "step_id": "build_recommendation_prompt",
+          "action": "llm_prompt",
+          "llm_prompt_hook": "recommend_next_papers",
+          "payload": { "project_context": "{{project_context}}", "project_name": "{{project_name}}", "max_recommendations": 5 },
+          "ui_state": "modal.recommendations",
+          "loading_state": "modal.recommendations.loading",
+          "next_step": "display_recommendations"
+        },
+        {
+          "step_id": "display_recommendations",
+          "action": "render",
+          "ui_state": "modal.recommendations",
+          "payload": { "recommendations": "{{llm_response}}", "format": "list_with_links" }
+        }
+      ],
+      "llm_prompt_hooks": [
+        { "hook_id": "recommend_next_papers", "when": "required", "prompt_ref": "recommend_next_papers" }
+      ]
+    }
+  ],
+
+  "llm_prompt_hooks_registry": {
+    "suggest_tags_for_paper": {
+      "description": "Optional: suggest tags for a paper given title/abstract.",
+      "template_ref": "prompts.suggest_tags_for_paper"
+    },
+    "project_overview_insight": {
+      "description": "Optional: one-sentence insight or theme for the project.",
+      "template_ref": "prompts.project_overview_insight"
+    },
+    "recommend_next_papers": {
+      "description": "Required: recommend next papers based on project context.",
+      "template_ref": "prompts.recommend_next_papers"
+    }
+  }
+}

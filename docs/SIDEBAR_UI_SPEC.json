@@ -1,0 +1,485 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bioscriptai.dev/schemas/sidebar-ui-spec.json",
+  "title": "BioScriptAI Chrome Extension — Sidebar UI/UX Design Specification",
+  "description": "Layout, components, interaction states, and triggers for the persistent sidebar.",
+  "version": "2.0.0",
+
+  "definitions": {
+
+    "sidebarOpeningTriggers": {
+      "type": "object",
+      "description": "Ways the user can open the sidebar.",
+      "properties": {
+        "hotkey": {
+          "type": "object",
+          "description": "Keyboard shortcut to toggle sidebar.",
+          "properties": {
+            "default": { "type": "string", "const": "Ctrl+Shift+B", "description": "Default shortcut (configurable in extension options)." },
+            "action": { "type": "string", "enum": ["toggle", "open", "close"], "default": "toggle" },
+            "scope": { "type": "string", "enum": ["global", "current_tab"], "default": "global" }
+          }
+        },
+        "toolbarIcon": {
+          "type": "object",
+          "description": "Chrome toolbar icon click.",
+          "properties": {
+            "click": { "type": "string", "enum": ["open_sidebar", "open_popup"], "default": "open_sidebar" },
+            "badge": {
+              "type": "object",
+              "description": "Optional badge (e.g. paper count or status).",
+              "properties": {
+                "showWhen": { "type": "string", "enum": ["paper_loaded", "always", "never"], "default": "paper_loaded" },
+                "content": { "type": "string", "enum": ["count", "dot", "none"], "default": "count" }
+              }
+            }
+          }
+        },
+        "pdfDetection": {
+          "type": "object",
+          "description": "Auto-suggest or auto-open when user is on a PDF.",
+          "properties": {
+            "onPdfLoad": {
+              "type": "string",
+              "enum": ["suggest_only", "open_sidebar", "do_nothing"],
+              "default": "suggest_only",
+              "description": "Behavior when active tab URL is a PDF (e.g. chrome-extension://.../pdf viewer or pdfjs)."
+            },
+            "suggestUi": {
+              "type": "string",
+              "enum": ["banner", "toast", "icon_pulse"],
+              "default": "banner",
+              "description": "When suggest_only: small banner/toast near toolbar offering to open sidebar."
+            }
+          }
+        }
+      },
+      "required": ["hotkey", "toolbarIcon", "pdfDetection"]
+    },
+
+    "paperContextLoader": {
+      "type": "object",
+      "description": "How paper content is detected and loaded for context.",
+      "properties": {
+        "sources": {
+          "type": "object",
+          "properties": {
+            "pdf": {
+              "type": "object",
+              "properties": {
+                "detection": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "URL patterns or tab criteria: viewer URLs, blob PDFs, file:// PDFs."
+                },
+                "parsing": {
+                  "type": "string",
+                  "enum": ["browser_pdf_viewer_dom", "moz_embed", "pdfjs_canvas", "external_service"],
+                  "description": "Strategy: scrape DOM of built-in viewer, or send to local service for text extraction."
+                },
+                "fallback": { "type": "string", "enum": ["screenshot_ocr", "user_paste", "none"], "default": "screenshot_ocr" }
+              }
+            },
+            "html": {
+              "type": "object",
+              "properties": {
+                "detection": {
+                  "type": "object",
+                  "properties": {
+                    "selectors": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "e.g. article, [role=main], .paper-content, .abstract, .body"
+                    },
+                    "domains": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Optional allowlist: arxiv.org, pubmed, publisher sites."
+                    }
+                  }
+                },
+                "parsing": {
+                  "type": "string",
+                  "enum": ["content_script_dom", "readability_like", "meta_tags_plus_body"],
+                  "description": "Extract main content via content script or Readability-style parsing."
+                }
+              }
+            }
+          }
+        },
+        "loaderStates": {
+          "type": "object",
+          "properties": {
+            "idle": { "type": "string", "description": "No paper context." },
+            "detecting": { "type": "string", "description": "Checking URL/DOM for paper." },
+            "loading": { "type": "string", "description": "Parsing PDF/HTML in progress." },
+            "ready": { "type": "string", "description": "Paper context available." },
+            "unsupported": { "type": "string", "description": "Page type not supported." },
+            "error": { "type": "string", "description": "Parse or load failed." }
+          }
+        }
+      }
+    },
+
+    "sidebarLayout": {
+      "type": "object",
+      "description": "Top-level sidebar layout structure.",
+      "properties": {
+        "orientation": { "type": "string", "enum": ["vertical"], "default": "vertical" },
+        "width": { "type": "string", "default": "400px", "description": "CSS width; min/max in theme." },
+        "sections": {
+          "type": "array",
+          "description": "Ordered sections from top to bottom.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "component": { "type": "string" },
+              "minHeight": { "type": "string" },
+              "maxHeight": { "type": "string" },
+              "collapsible": { "type": "boolean" },
+              "defaultCollapsed": { "type": "boolean" }
+            },
+            "required": ["id", "component"]
+          },
+          "default": [
+            { "id": "header", "component": "SidebarHeader", "collapsible": false },
+            { "id": "context_bar", "component": "PaperContextBar", "collapsible": false },
+            { "id": "workspace", "component": "PersistentWorkspace", "minHeight": "120px", "collapsible": true, "defaultCollapsed": false },
+            { "id": "chat", "component": "QuestionInputArea", "minHeight": "80px", "collapsible": false },
+            { "id": "responses", "component": "ResponsePanel", "minHeight": "160px", "collapsible": true, "defaultCollapsed": false },
+            { "id": "figure_tools", "component": "FigureInterpretationOptions", "collapsible": true, "defaultCollapsed": true }
+          ]
+        }
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "properties": {
+
+        "SidebarHeader": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string", "default": "BioScriptAI" },
+            "subtitle": { "type": "string", "default": "Paper assistant" },
+            "actions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "icon": { "type": "string" },
+                  "ariaLabel": { "type": "string" },
+                  "action": { "type": "string", "enum": ["open_options", "collapse_all", "clear_context", "refresh"] }
+                }
+              }
+            }
+          }
+        },
+
+        "PaperContextBar": {
+          "type": "object",
+          "description": "Shows current paper context and loader state.",
+          "properties": {
+            "states": {
+              "type": "object",
+              "properties": {
+                "idle": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "default": "Open a paper or article to start." },
+                    "icon": { "type": "string", "default": "document" }
+                  }
+                },
+                "detecting": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "default": "Detecting paper…" },
+                    "showSpinner": { "type": "boolean", "default": true }
+                  }
+                },
+                "loading": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "default": "Loading paper context…" },
+                    "showSpinner": { "type": "boolean", "default": true },
+                    "progress": { "type": ["number", "null"], "description": "0–100 or null for indeterminate." }
+                  }
+                },
+                "ready": {
+                  "type": "object",
+                  "properties": {
+                    "showTitle": { "type": "boolean", "default": true },
+                    "showSource": { "type": "boolean", "default": true },
+                    "maxTitleLength": { "type": "number", "default": 60 }
+                  }
+                },
+                "unsupported": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "default": "This page isn't a supported paper. Try a PDF or article page." },
+                    "action": { "type": "string", "enum": ["paste_text", "none"], "default": "paste_text" }
+                  }
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "message": { "type": "string", "default": "Couldn't load paper. Retry or paste text." },
+                    "retryButton": { "type": "boolean", "default": true }
+                  }
+                }
+              }
+            }
+          }
+        },
+
+        "PersistentWorkspace": {
+          "type": "object",
+          "description": "Saved papers and projects; persists across sessions.",
+          "properties": {
+            "title": { "type": "string", "default": "Workspace" },
+            "tabs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string", "enum": ["papers", "projects"] },
+                  "label": { "type": "string" },
+                  "icon": { "type": "string" }
+                }
+              },
+              "default": [
+                { "id": "papers", "label": "Saved papers", "icon": "folder" },
+                { "id": "projects", "label": "Projects", "icon": "project" }
+              ]
+            },
+            "papers": {
+              "type": "object",
+              "properties": {
+                "listItem": {
+                  "type": "object",
+                  "properties": {
+                    "showTitle": true,
+                    "showAuthors": { "type": "boolean", "default": true },
+                    "showYear": { "type": "boolean", "default": true },
+                    "actions": { "type": "array", "items": { "type": "string" }, "default": ["open", "remove", "add_to_project"] }
+                  }
+                },
+                "emptyState": { "type": "string", "default": "No saved papers. Save from the context bar or Zotero." }
+              }
+            },
+            "projects": {
+              "type": "object",
+              "properties": {
+                "listItem": {
+                  "type": "object",
+                  "properties": {
+                    "showName": true,
+                    "showPaperCount": { "type": "boolean", "default": true },
+                    "actions": { "type": "array", "items": { "type": "string" }, "default": ["open", "rename", "delete"] }
+                  }
+                },
+                "emptyState": { "type": "string", "default": "No projects. Create one to group papers." }
+              }
+            }
+          }
+        },
+
+        "QuestionInputArea": {
+          "type": "object",
+          "description": "Real-time question input and send.",
+          "properties": {
+            "placeholder": { "type": "string", "default": "Ask about the paper…" },
+            "multiline": { "type": "boolean", "default": true },
+            "maxRows": { "type": "number", "default": 4 },
+            "sendTrigger": {
+              "type": "object",
+              "properties": {
+                "button": { "type": "boolean", "default": true },
+                "enter": { "type": "boolean", "default": true },
+                "enterBehavior": { "type": "string", "enum": ["send", "new_line", "send_no_shift_new_line_with_shift"], "default": "send_no_shift_new_line_with_shift" }
+              }
+            },
+            "states": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "string", "description": "Context ready; input active." },
+                "disabled_no_context": { "type": "string", "description": "No paper context; show hint." },
+                "sending": { "type": "string", "description": "Request in flight; disable input, show spinner." },
+                "error": { "type": "string", "description": "Last request failed; allow retry." }
+              }
+            },
+            "quickActions": {
+              "type": "array",
+              "description": "Optional chips or buttons for common prompts.",
+              "items": { "type": "string" },
+              "default": ["Summarize this section", "Explain this figure", "Key findings", "Methods in one sentence"]
+            }
+          }
+        },
+
+        "TermHighlighter": {
+          "type": "object",
+          "description": "Highlight terms and show definition tooltips.",
+          "properties": {
+            "trigger": {
+              "type": "string",
+              "enum": ["double_click", "selection", "hover_after_highlight", "right_click"],
+              "default": "double_click",
+              "description": "How a term is selected for definition."
+            },
+            "tooltip": {
+              "type": "object",
+              "properties": {
+                "position": { "type": "string", "enum": ["above", "below", "sidebar_panel", "inline"], "default": "below" },
+                "maxWidth": { "type": "string", "default": "320px" },
+                "contentSource": { "type": "string", "enum": ["llm", "local_glossary", "both"], "default": "both" },
+                "loadingState": { "type": "string", "default": "Looking up…" }
+              }
+            },
+            "highlight": {
+              "type": "object",
+              "properties": {
+                "style": { "type": "string", "enum": ["underline", "background", "border_bottom"], "default": "background" },
+                "color": { "type": "string", "description": "CSS color or theme variable.", "default": "var(--highlight-term)" },
+                "persist": { "type": "boolean", "default": false, "description": "Keep highlight after tooltip closed." }
+              }
+            }
+          }
+        },
+
+        "DefinitionTooltip": {
+          "type": "object",
+          "description": "Tooltip content and behavior.",
+          "properties": {
+            "layout": {
+              "type": "object",
+              "properties": {
+                "term": { "type": "string", "description": "Bold term at top." },
+                "definition": { "type": "string", "description": "Plain or markdown body." },
+                "source": { "type": "string", "description": "Optional: 'From paper' / 'Glossary' / model." }
+              }
+            },
+            "interactionStates": {
+              "type": "object",
+              "properties": {
+                "loading": { "type": "string" },
+                "loaded": { "type": "string" },
+                "error": { "type": "string" },
+                "no_definition": { "type": "string" }
+              }
+            }
+          }
+        },
+
+        "FigureInterpretationOptions": {
+          "type": "object",
+          "description": "Options for figure interpretation (when figure is selected or in context).",
+          "properties": {
+            "visibility": {
+              "type": "string",
+              "enum": ["always_visible", "when_figure_selected", "when_image_in_context"],
+              "default": "when_figure_selected"
+            },
+            "options": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "label": { "type": "string" },
+                  "promptTemplate": { "type": "string" },
+                  "description": { "type": "string" }
+                },
+                "required": ["id", "label"]
+              },
+              "default": [
+                { "id": "describe", "label": "Describe figure", "promptTemplate": "Describe this figure in plain language.", "description": "General description" },
+                { "id": "caption", "label": "Suggest caption", "promptTemplate": "Suggest a short caption for this figure." },
+                { "id": "data_summary", "label": "Summarize data", "promptTemplate": "Summarize the data or results shown in this figure." },
+                { "id": "methods", "label": "Infer methods", "promptTemplate": "What methods or techniques might have been used to produce this figure?" }
+              ]
+            },
+            "input": {
+              "type": "object",
+              "properties": {
+                "allowCustomQuestion": { "type": "boolean", "default": true },
+                "placeholder": { "type": "string", "default": "Or ask something specific about this figure…" }
+              }
+            }
+          }
+        },
+
+        "ResponsePanel": {
+          "type": "object",
+          "description": "Area where Q&A and summarization responses are shown.",
+          "properties": {
+            "layout": { "type": "string", "enum": ["single", "thread"], "default": "thread" },
+            "messageBubble": {
+              "type": "object",
+              "properties": {
+                "user": { "type": "object", "properties": { "align": { "type": "string", "default": "end" }, "style": { "type": "string" } } },
+                "assistant": { "type": "object", "properties": { "align": { "type": "string", "default": "start" }, "showCopy": { "type": "boolean", "default": true } } }
+              }
+            },
+            "states": {
+              "type": "object",
+              "properties": {
+                "empty": { "type": "string", "default": "Ask a question or use a quick action above." },
+                "streaming": { "type": "string", "description": "Show partial response and cursor." },
+                "complete": { "type": "string" },
+                "error": { "type": "string", "description": "Show error and retry." }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "interactionStates": {
+      "type": "object",
+      "description": "Global interaction states that affect multiple components.",
+      "properties": {
+        "sidebar": {
+          "type": "string",
+          "enum": ["closed", "opening", "open", "closing"]
+        },
+        "context": {
+          "type": "string",
+          "enum": ["idle", "detecting", "loading", "ready", "unsupported", "error"]
+        },
+        "llm": {
+          "type": "string",
+          "enum": ["idle", "sending", "streaming", "done", "error"]
+        },
+        "figureSelection": {
+          "type": "string",
+          "enum": ["none", "selected", "interpreting"]
+        }
+      }
+    },
+
+    "theme": {
+      "type": "object",
+      "description": "Optional theme tokens for layout and components.",
+      "properties": {
+        "sidebarWidth": { "type": "string", "default": "400px" },
+        "sidebarMinWidth": { "type": "string", "default": "320px" },
+        "sidebarMaxWidth": { "type": "string", "default": "520px" },
+        "spacing": { "type": "string", "default": "8px" },
+        "borderRadius": { "type": "string", "default": "8px" },
+        "highlightTermBg": { "type": "string", "default": "rgba(255, 212, 0, 0.35)" }
+      }
+    }
+  },
+
+  "properties": {
+    "sidebarOpeningTriggers": { "$ref": "#/definitions/sidebarOpeningTriggers" },
+    "paperContextLoader": { "$ref": "#/definitions/paperContextLoader" },
+    "sidebarLayout": { "$ref": "#/definitions/sidebarLayout" },
+    "components": { "$ref": "#/definitions/components" },
+    "interactionStates": { "$ref": "#/definitions/interactionStates" },
+    "theme": { "$ref": "#/definitions/theme" }
+  }
+}

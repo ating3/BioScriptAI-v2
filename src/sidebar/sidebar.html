@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioScriptAI</title>
+  <link rel="stylesheet" href="sidebar.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="sidebar-header">
+    <h1>BioScriptAI</h1>
+    <p class="subtitle">Paper assistant</p>
+    <div class="header-actions">
+      <button id="btn-options" class="icon-btn" title="Options">⚙️</button>
+      <button id="btn-collapse-all" class="icon-btn" title="Collapse all">−</button>
+      <button id="btn-clear-context" class="icon-btn" title="Clear context">🗑️</button>
+    </div>
+  </header>
+
+  <!-- Paper Context Bar -->
+  <section id="paper-context-bar" class="paper-context-bar">
+    <div id="context-state-idle" class="context-state">
+      <span class="context-icon">📄</span>
+      <span>Open a paper or article to start.</span>
+    </div>
+    <div id="context-state-loading" class="context-state hidden">
+      <span class="spinner"></span>
+      <span>Loading paper context…</span>
+    </div>
+    <div id="context-state-ready" class="context-state hidden">
+      <span class="context-icon">✓</span>
+      <span id="context-title"></span>
+      <span id="context-source" class="context-source"></span>
+    </div>
+  </section>
+
+  <!-- Persistent Workspace -->
+  <section class="workspace-section">
+    <div class="workspace-header">
+      <h2>Workspace</h2>
+      <button id="btn-toggle-workspace" class="toggle-btn">−</button>
+    </div>
+    <div id="workspace-content" class="workspace-content">
+      <div class="workspace-tabs">
+        <button class="tab-btn active" data-tab="papers">📚 Saved papers</button>
+        <button class="tab-btn" data-tab="projects">📁 Projects</button>
+      </div>
+
+      <!-- Papers Tab -->
+      <div id="tab-papers" class="tab-content active">
+        <div id="papers-list" class="papers-list">
+          <div class="empty-state">No saved papers. Save from the context bar or Zotero.</div>
+        </div>
+      </div>
+
+      <!-- Projects Tab -->
+      <div id="tab-projects" class="tab-content">
+        <div id="projects-list" class="projects-list">
+          <div class="empty-state">No projects. Create one to group papers.</div>
+        </div>
+        <button id="btn-create-project" class="btn-primary">+ Create project</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Question Input Area -->
+  <section class="question-section">
+    <div class="question-input-wrapper">
+      <textarea 
+        id="question-input" 
+        class="question-input" 
+        placeholder="Ask about the paper…"
+        rows="2"
+      ></textarea>
+      <button id="btn-send-question" class="btn-send" title="Send (Enter)">➤</button>
+    </div>
+    <div id="quick-actions" class="quick-actions">
+      <button class="quick-action-chip">Summarize this section</button>
+      <button class="quick-action-chip">Explain this figure</button>
+      <button class="quick-action-chip">Key findings</button>
+    </div>
+  </section>
+
+  <!-- Response Panel -->
+  <section class="response-section">
+    <div class="response-header">
+      <h3>Responses</h3>
+      <button id="btn-toggle-responses" class="toggle-btn">−</button>
+    </div>
+    <div id="response-content" class="response-content">
+      <div id="response-thread" class="response-thread">
+        <div class="empty-state">Ask a question or use a quick action above.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Figure Interpretation Options (collapsed by default) -->
+  <section class="figure-section hidden">
+    <div class="figure-header">
+      <h3>Figure options</h3>
+      <button id="btn-toggle-figure" class="toggle-btn">+</button>
+    </div>
+    <div id="figure-content" class="figure-content hidden">
+      <button class="figure-option-btn">Describe figure</button>
+      <button class="figure-option-btn">Suggest caption</button>
+      <button class="figure-option-btn">Summarize data</button>
+      <button class="figure-option-btn">Infer methods</button>
+      <textarea class="figure-custom-input" placeholder="Or ask something specific about this figure…"></textarea>
+    </div>
+  </section>
+
+  <!-- Modals -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <!-- Create Project Modal -->
+    <div id="modal-create-project" class="modal hidden">
+      <h3>Create project</h3>
+      <input type="text" id="project-name-input" placeholder="Project name" />
+      <div class="modal-actions">
+        <button id="btn-create-project-submit" class="btn-primary">Create</button>
+        <button class="btn-secondary" onclick="closeModal('modal-create-project')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Export Bibliography Modal -->
+    <div id="modal-export" class="modal hidden">
+      <h3>Export bibliography</h3>
+      <div class="export-options">
+        <label><input type="radio" name="export-format" value="apa" checked> APA</label>
+        <label><input type="radio" name="export-format" value="mla"> MLA</label>
+        <label><input type="radio" name="export-format" value="bibtex"> BibTeX</label>
+      </div>
+      <div id="export-preview" class="export-preview"></div>
+      <div class="modal-actions">
+        <button id="btn-copy-export" class="btn-primary">Copy</button>
+        <button class="btn-secondary" onclick="closeModal('modal-export')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="sidebar.js"></script>
+</body>
+</html>

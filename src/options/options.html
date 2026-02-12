@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioScriptAI Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 600px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+    h1 { margin-bottom: 30px; }
+    .setting-group {
+      margin-bottom: 30px;
+      padding: 20px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+    .setting-group h2 {
+      margin-bottom: 15px;
+      font-size: 18px;
+    }
+    .setting-item {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+    .help-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+    button {
+      background: #0066cc;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      opacity: 0.9;
+    }
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 4px;
+      display: none;
+    }
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      display: block;
+    }
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <h1>BioScriptAI Settings</h1>
+
+  <!-- Privacy & Data -->
+  <div class="setting-group">
+    <h2>Privacy & Data</h2>
+    
+    <div class="setting-item">
+      <label class="checkbox-label">
+        <input type="checkbox" id="screen-inference-enabled" />
+        <span>Use visible page content to answer questions (local by default)</span>
+      </label>
+      <div class="help-text">When enabled, BioScriptAI reads the visible portion of pages you visit to provide context-aware answers.</div>
+    </div>
+
+    <div class="setting-item">
+      <label class="checkbox-label">
+        <input type="checkbox" id="cloud-acceleration-enabled" />
+        <span>Cloud acceleration (faster, requires sending text to processing service)</span>
+      </label>
+      <div class="help-text">Send text excerpts to cloud for faster processing. You can disable this anytime.</div>
+    </div>
+  </div>
+
+  <!-- LLM Configuration -->
+  <div class="setting-group">
+    <h2>LLM Configuration</h2>
+    
+    <div class="setting-item">
+      <label for="llm-base-url">Local LLM Server URL</label>
+      <input type="url" id="llm-base-url" placeholder="http://localhost:8000" />
+      <div class="help-text">URL of your local Hugging Face inference server (default: http://localhost:8000)</div>
+    </div>
+
+    <div class="setting-item">
+      <button id="test-llm-connection">Test Connection</button>
+      <div id="llm-status" class="status"></div>
+    </div>
+  </div>
+
+  <!-- Zotero Integration -->
+  <div class="setting-group">
+    <h2>Zotero Integration</h2>
+    
+    <div class="setting-item">
+      <label for="zotero-api-key">Zotero API Key</label>
+      <input type="text" id="zotero-api-key" placeholder="Enter your Zotero API key" />
+      <div class="help-text">
+        Get your API key from <a href="https://www.zotero.org/settings/keys/new" target="_blank">Zotero Settings</a>.
+        Make sure it has write access.
+      </div>
+    </div>
+
+    <div class="setting-item">
+      <button id="test-zotero-connection">Test Connection</button>
+      <div id="zotero-status" class="status"></div>
+    </div>
+  </div>
+
+  <!-- Save Button -->
+  <div style="margin-top: 30px;">
+    <button id="save-settings">Save Settings</button>
+    <div id="save-status" class="status"></div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
