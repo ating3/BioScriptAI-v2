@@ -8,6 +8,7 @@ import { LLMService } from '../services/llm-service.js';
 import { ZoteroService } from '../services/zotero-service.js';
 import { QAModule } from '../modules/qa-module.js';
 import { SummarizationModule } from '../modules/summarization-module.js';
+import { PromptLoader } from '../utils/prompt-loader.js';
 
 // Initialize services
 const contextManager = new ContextManager();
@@ -81,6 +82,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ context });
     return true;
   }
+
+  if (request.action === 'defineTerm') {
+    handleDefineTerm(request, sendResponse);
+    return true;
+  }
 });
 
 /**
@@ -125,6 +131,48 @@ async function handleSummarize(request, sendResponse) {
   } catch (error) {
     console.error('Summarization error:', error);
     sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle term definition request (for highlight tooltip)
+ */
+async function handleDefineTerm(request, sendResponse) {
+  try {
+    const { term, excerpt } = request;
+    if (!term || !excerpt) {
+      sendResponse({ success: false, error: 'Missing term or excerpt' });
+      return;
+    }
+
+    const { system, user } = PromptLoader.loadTermDefinitionPrompt({ term, excerpt });
+    const messages = [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ];
+
+    const result = await llmService.chat({
+      messages,
+      temperature: 0.3,
+      max_tokens: 600
+    });
+
+    const raw = Array.isArray(result.content) ? result.content[0] : result.content;
+    if (!raw || typeof raw !== 'string') {
+      sendResponse({ success: false, error: 'Empty response from model' });
+      return;
+    }
+
+    // Strip markdown code fence if present
+    let jsonStr = raw.trim();
+    const fence = jsonStr.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/);
+    if (fence) jsonStr = fence[1].trim();
+
+    const definition = JSON.parse(jsonStr);
+    sendResponse({ success: true, definition });
+  } catch (error) {
+    console.error('Define term error:', error);
+    sendResponse({ success: false, error: error.message || 'Failed to get definition' });
   }
 }
 

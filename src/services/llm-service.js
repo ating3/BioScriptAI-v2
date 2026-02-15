@@ -4,11 +4,25 @@
  * Based on ARCHITECTURE.md Section 4
  */
 
+// Set to true in development to log equivalent curl for each request (see console)
+const DEBUG_LOG_CURL = true;
+
 export class LLMService {
   constructor(config = {}) {
     this.baseUrl = config.baseUrl || 'http://localhost:8000';
     this.model = config.model || 'Qwen/Qwen2-VL-2B-Instruct';
     this.timeout = config.timeout || 30000;
+  }
+
+  /**
+   * Build equivalent curl for the chat request (for debugging).
+   * @private
+   */
+  _curlChat(body) {
+    const bodyStr = JSON.stringify(body);
+    // Escape backslashes and double quotes for shell
+    const escaped = bodyStr.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    return `curl -X POST "${this.baseUrl}/chat" -H "Content-Type: application/json" -d "${escaped}"`;
   }
 
   /**
@@ -18,6 +32,16 @@ export class LLMService {
    */
   async chat(params) {
     const { messages, images = [], temperature = 0.7, max_tokens = 1000 } = params;
+    const payload = {
+      model: this.model,
+      messages: this.prepareMessages(messages, images),
+      temperature,
+      max_tokens
+    };
+
+    if (DEBUG_LOG_CURL) {
+      console.log('[LLMService] Equivalent curl:\n', this._curlChat(payload));
+    }
 
     try {
       const response = await fetch(`${this.baseUrl}/chat`, {
@@ -25,12 +49,7 @@ export class LLMService {
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: this.prepareMessages(messages, images),
-          temperature,
-          max_tokens
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {

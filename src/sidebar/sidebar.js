@@ -42,6 +42,10 @@ function setupEventListeners() {
     clearContext();
   });
 
+  document.getElementById('btn-retry-context').addEventListener('click', () => {
+    checkCurrentTab();
+  });
+
   // Workspace tabs
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -87,22 +91,64 @@ async function checkCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   currentTab = tab;
 
-  if (tab.url) {
-    updateContextState('detecting');
-    
-    // Request visible context from content script
+  if (!tab?.id || !tab.url) {
+    updateContextState('idle');
+    return;
+  }
+
+  // Chrome's built-in PDF viewer runs in a chrome-extension:// page; content scripts cannot run there
+  if (tab.url.startsWith('chrome-extension://')) {
+    updateContextState('error', { message: 'This tab is the PDF viewer. Open the paper as a web article (e.g. journal HTML page) or use a site that shows the article in HTML.' });
+    return;
+  }
+
+  updateContextState('loading');
+
+  function onContextResult(response) {
+    if (response && response.text) {
+      updateContextState('ready', {
+        title: extractTitleFromUrl(tab.url),
+        source: tab.url
+      });
+      currentContext = response;
+    } else {
+      const reason = response?.source === 'unsupported' || response?.source === 'no_content' || response?.source === 'pdf_no_text'
+        ? 'No readable content found. Try a journal article page or a page with visible text.'
+        : 'Could not load context.';
+      updateContextState('error', { message: reason });
+    }
+  }
+
+  function tryGetContext(useInjectionFallback) {
     chrome.tabs.sendMessage(tab.id, { action: 'getVisibleContext' }, (response) => {
-      if (response && response.text) {
-        updateContextState('ready', {
-          title: extractTitleFromUrl(tab.url),
-          source: tab.url
-        });
-        currentContext = response;
-      } else {
-        updateContextState('idle');
+      if (chrome.runtime.lastError) {
+        const err = chrome.runtime.lastError.message || '';
+        const canInject = (tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://') || tab.url.startsWith('file://')));
+        if (useInjectionFallback && canInject && (err.includes('Receiving end does not exist') || err.includes('Could not establish connection'))) {
+          chrome.scripting.executeScript(
+            { target: { tabId: tab.id }, files: ['src/content/content-script.js'] },
+            () => {
+              if (chrome.runtime.lastError) {
+                updateContextState('error', { message: 'Could not read this page. Try refreshing the tab, then open the sidebar again.' });
+                return;
+              }
+              // Give the injected script a moment to register its listener
+              setTimeout(() => tryGetContext(false), 100);
+            }
+          );
+          return;
+        }
+        const hint = err.includes('Receiving end does not exist') || err.includes('Could not establish connection')
+          ? ' Try refreshing the paper tab, then open the sidebar again.'
+          : '';
+        updateContextState('error', { message: 'Extension could not read this page.' + hint });
+        return;
       }
+      onContextResult(response);
     });
   }
+
+  tryGetContext(true);
 }
 
 /**
@@ -125,6 +171,10 @@ function updateContextState(state, data = {}) {
     if (data.source) {
       document.getElementById('context-source').textContent = new URL(data.source).hostname;
     }
+  }
+  if (state === 'error' && data.message) {
+    const el = document.getElementById('context-error-message');
+    if (el) el.textContent = data.message;
   }
 }
 

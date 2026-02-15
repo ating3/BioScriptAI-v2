@@ -123,6 +123,38 @@
   }
 
   /**
+   * Extract visible text from document.body when no article/main is found
+   */
+  function extractVisibleFromBody(viewport) {
+    const root = document.body;
+    if (!root) return { text: null, scrollY: viewport.scrollY, source: 'no_content' };
+
+    const visibleTexts = [];
+    const walker = document.createTreeWalker(
+      root,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    const skipTags = new Set(['SCRIPT', 'STYLE', 'NAV', 'HEADER', 'FOOTER', 'IFRAME', 'NOSCRIPT']);
+    let node;
+    while (node = walker.nextNode()) {
+      const parent = node.parentElement;
+      if (!parent) continue;
+      const tag = parent.tagName && parent.tagName.toUpperCase();
+      if (skipTags.has(tag)) continue;
+      const rect = parent.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0 && intersects(rect, viewport)) {
+        const t = node.textContent.trim();
+        if (t) visibleTexts.push(t);
+      }
+    }
+
+    const text = visibleTexts.join(' ').replace(/\s+/g, ' ').trim() || null;
+    return { text, scrollY: viewport.scrollY, source: 'html' };
+  }
+
+  /**
    * Get visible context
    */
   function getVisibleContext() {
@@ -141,6 +173,11 @@
     } else if (pageType === 'html') {
       return extractVisibleFromHTML(viewport);
     } else {
+      // Fallback: try to get any visible text from the page
+      const fallback = extractVisibleFromBody(viewport);
+      if (fallback.text && fallback.text.trim().length > 100) {
+        return fallback;
+      }
       return { text: null, source: 'unsupported' };
     }
   }
@@ -213,6 +250,169 @@
 
     return null;
   }
+
+  // ---- Term highlighter & definition tooltip ----
+  const HIGHLIGHT_CLASS = 'bioscript-term-highlight';
+  const TOOLTIP_ID = 'bioscript-definition-tooltip';
+
+  function injectTermHighlighterStyles() {
+    if (document.getElementById('bioscript-term-styles')) return;
+    const style = document.createElement('style');
+    style.id = 'bioscript-term-styles';
+    style.textContent = `
+      .${HIGHLIGHT_CLASS} { background: rgba(255, 212, 0, 0.35); border-radius: 2px; }
+      #${TOOLTIP_ID} {
+        position: fixed; z-index: 2147483647;
+        max-width: 320px; padding: 10px 12px;
+        background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 13px; line-height: 1.4;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      #${TOOLTIP_ID} .bioscript-tooltip-term { font-weight: 700; margin-bottom: 6px; }
+      #${TOOLTIP_ID} .bioscript-tooltip-def { color: #333; margin-bottom: 6px; }
+      #${TOOLTIP_ID} .bioscript-tooltip-simple { color: #555; font-size: 12px; margin-bottom: 6px; }
+      #${TOOLTIP_ID} .bioscript-tooltip-examples { margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee; font-size: 12px; color: #666; }
+      #${TOOLTIP_ID} .bioscript-tooltip-links { margin-top: 6px; font-size: 12px; }
+      #${TOOLTIP_ID} .bioscript-tooltip-links a { color: #0066cc; margin-right: 8px; }
+      #${TOOLTIP_ID} .bioscript-tooltip-error { color: #c00; }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function getExcerptAroundSelection() {
+    const ctx = getVisibleContext();
+    if (ctx && ctx.text) return ctx.text;
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return '';
+    const range = sel.getRangeAt(0);
+    let node = range.commonAncestorContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const block = node.closest ? node.closest('p, div, li, td, [role="paragraph"]') : null;
+    if (!block) return range.toString() || '';
+    let excerpt = block.textContent || '';
+    const prev = block.previousElementSibling;
+    if (prev && (prev.tagName === 'P' || prev.tagName === 'DIV')) excerpt = (prev.textContent || '').trim() + '\n\n' + excerpt;
+    const next = block.nextElementSibling;
+    if (next && (next.tagName === 'P' || next.tagName === 'DIV')) excerpt = excerpt + '\n\n' + (next.textContent || '').trim();
+    return excerpt.slice(0, 4000);
+  }
+
+  function tryApplyHighlight(range) {
+    try {
+      const span = document.createElement('span');
+      span.className = HIGHLIGHT_CLASS;
+      range.surroundContents(span);
+      return span;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function removeExistingTooltip() {
+    const el = document.getElementById(TOOLTIP_ID);
+    if (el) el.remove();
+  }
+
+  function removeExistingHighlights() {
+    document.querySelectorAll('.' + HIGHLIGHT_CLASS).forEach(el => {
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      }
+    });
+  }
+
+  function showDefinitionTooltip(rect, term, excerpt) {
+    removeExistingTooltip();
+    removeExistingHighlights();
+
+    injectTermHighlighterStyles();
+
+    const tooltip = document.createElement('div');
+    tooltip.id = TOOLTIP_ID;
+    tooltip.innerHTML = '<span class="bioscript-tooltip-term">' + escapeHtml(term) + '</span><div class="bioscript-tooltip-def">Looking up…</div>';
+
+    const padding = 8;
+    let top = rect.bottom + padding;
+    let left = rect.left;
+    if (top + 200 > window.innerHeight) top = rect.top - 200 - padding;
+    if (left + 320 > window.innerWidth) left = window.innerWidth - 320 - padding;
+    if (left < padding) left = padding;
+    tooltip.style.top = (top + window.scrollY) + 'px';
+    tooltip.style.left = (left + window.scrollX) + 'px';
+
+    document.body.appendChild(tooltip);
+
+    function close() {
+      tooltip.remove();
+      document.removeEventListener('keydown', onEscape);
+      document.removeEventListener('click', onClickOutside);
+    }
+
+    function onEscape(e) {
+      if (e.key === 'Escape') close();
+    }
+    function onClickOutside(e) {
+      if (!tooltip.contains(e.target)) close();
+    }
+
+    document.addEventListener('keydown', onEscape);
+    setTimeout(() => document.addEventListener('click', onClickOutside), 0);
+
+    chrome.runtime.sendMessage({ action: 'defineTerm', term, excerpt }, (response) => {
+      if (chrome.runtime.lastError) {
+        tooltip.querySelector('.bioscript-tooltip-def').className = 'bioscript-tooltip-def bioscript-tooltip-error';
+        tooltip.querySelector('.bioscript-tooltip-def').textContent = 'Extension error. Is the sidebar or LLM connected?';
+        return;
+      }
+      if (!response || !response.success) {
+        tooltip.querySelector('.bioscript-tooltip-def').className = 'bioscript-tooltip-def bioscript-tooltip-error';
+        tooltip.querySelector('.bioscript-tooltip-def').textContent = response && response.error ? response.error : 'Could not get definition.';
+        return;
+      }
+      const d = response.definition;
+      let html = '<span class="bioscript-tooltip-term">' + escapeHtml(d.term || term) + '</span>';
+      html += '<div class="bioscript-tooltip-def">' + escapeHtml(d.definition || '') + '</div>';
+      if (d.simplified_explanation) html += '<div class="bioscript-tooltip-simple">' + escapeHtml(d.simplified_explanation) + '</div>';
+      if (d.usage_examples && d.usage_examples.length) {
+        html += '<div class="bioscript-tooltip-examples">Examples: ' + escapeHtml(d.usage_examples.join(' — ')) + '</div>';
+      }
+      if (d.reference_links && d.reference_links.length) {
+        html += '<div class="bioscript-tooltip-links">';
+        d.reference_links.forEach(link => {
+          const url = (typeof link === 'object' && link.url) ? link.url : link;
+          const title = (typeof link === 'object' && link.title) ? link.title : url;
+          html += '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(title) + '</a>';
+        });
+        html += '</div>';
+      }
+      tooltip.innerHTML = html;
+    });
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  document.addEventListener('dblclick', () => {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      const term = (sel && sel.toString && sel.toString()) ? sel.toString().trim() : '';
+      if (!term || term.length < 1 || term.length > 150) return;
+      const excerpt = getExcerptAroundSelection();
+      if (!excerpt) return;
+
+      const range = sel.rangeCount ? sel.getRangeAt(0) : null;
+      if (range) tryApplyHighlight(range);
+      const rect = range && range.getBoundingClientRect && range.getBoundingClientRect();
+      const fallbackRect = rect && rect.width ? rect : { left: 100, bottom: 150, top: 100 };
+      showDefinitionTooltip(rect && rect.width ? rect : fallbackRect, term, excerpt);
+    }, 10);
+  });
 
   /**
    * Listen for messages from service worker

@@ -64,7 +64,24 @@ curl http://localhost:8000/health
 # Test chat endpoint
 curl -X POST http://localhost:8000/chat \
   -H "Content-Type: application/json" \
-  -d '{"messages":[{"role":"user","content":"Hello!"}],"max_tokens":100}'
+  -d '{"messages":[{"role":"user","content":"what is a mitochondria"}],"max_tokens":100}'
+
+#Test Model endpoint
+curl -X POST http://localhost:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {"type": "image", "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"},
+          {"type": "text", "text": "What animal is in this image? Describe it briefly."}
+        ]
+      }
+    ],
+    "temperature": 0.7,
+    "max_tokens": 256
+  }'
 
 # Or use the test script:
 bash scripts/test-server.sh

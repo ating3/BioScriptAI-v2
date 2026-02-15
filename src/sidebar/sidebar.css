@@ -412,6 +412,25 @@ body {
   cursor: pointer;
 }
 
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent-color);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+  padding: 0;
+  margin-left: var(--spacing);
+}
+
+#context-state-error {
+  flex-wrap: wrap;
+}
+
+#context-state-error .context-icon {
+  flex-shrink: 0;
+}
+
 .export-options {
   margin-bottom: calc(var(--spacing) * 2);
 }

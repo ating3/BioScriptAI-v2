@@ -7,7 +7,10 @@ Install: pip install flask transformers torch flask-cors accelerate
 """
 
 from flask import Flask, request, jsonify
+from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from qwen_vl_utils import process_vision_info
 from flask_cors import CORS
+import copy
 import logging
 import torch
 
@@ -19,21 +22,20 @@ logger = logging.getLogger(__name__)
 
 # Initialize model (lazy load on first request)
 model = None
-tokenizer = None
+processor = None
 
 def load_model():
     """Load the Hugging Face model"""
-    global model, tokenizer
+    global model, processor
     if model is None:
         logger.info("Loading model...")
         try:
-            from transformers import AutoModelForCausalLM, AutoTokenizer
             
             model_name = "Qwen/Qwen2-VL-2B-Instruct"
             
-            # Load tokenizer
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            
+            # Load processor
+            processor = AutoProcessor.from_pretrained("Qwen/Qwen2-VL-2B-Instruct")
+
             # Determine device and dtype
             device = "cuda" if torch.cuda.is_available() else "cpu"
             dtype = torch.float16 if device == "cuda" else torch.float32
@@ -41,15 +43,20 @@ def load_model():
             logger.info(f"Loading model on {device} with dtype {dtype}")
             
             # Load model
-            model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                device_map="auto" if device == "cuda" else None,
-                torch_dtype=dtype,
-                trust_remote_code=True
-            )
-            
-            if device == "cpu":
-                model = model.to(device)
+            if torch.cuda.is_available():
+                model = Qwen2VLForConditionalGeneration.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float16,
+                    device_map="auto",
+                    trust_remote_code=True
+                )
+            else:
+                model = Qwen2VLForConditionalGeneration.from_pretrained(
+                    model_name,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True
+                )
+                model = model.to("cpu")
             
             model.eval()  # Set to evaluation mode
             logger.info("Model loaded successfully")
@@ -57,7 +64,7 @@ def load_model():
             logger.error(f"Failed to load model: {e}")
             logger.error("Make sure you have installed: pip install transformers torch accelerate")
             raise
-    return model, tokenizer
+    return model, processor
 
 @app.route("/health", methods=["GET"])
 def health():
@@ -74,26 +81,36 @@ def chat():
         max_tokens = data.get("max_tokens", 1000)
 
         # Load model if needed
-        model, tokenizer = load_model()
+        model, processor = load_model()
 
         # Use tokenizer's chat template if available (Qwen models support this)
-        if hasattr(tokenizer, 'apply_chat_template'):
+        if hasattr(processor, 'apply_chat_template'):
             try:
-                # Format messages using the model's chat template
-                prompt = tokenizer.apply_chat_template(
-                    messages,
+                # Extract images from the ORIGINAL messages. Use a deep copy for
+                # apply_chat_template so the template cannot mutate our message
+                # content (which would break vision extraction).
+                image_inputs, video_inputs = process_vision_info(messages)
+                messages_for_template = copy.deepcopy(messages)
+                prompt = processor.apply_chat_template(
+                    messages_for_template,
                     tokenize=False,
                     add_generation_prompt=True
                 )
-                inputs = tokenizer(prompt, return_tensors="pt")
+                inputs = processor(
+                    text=[prompt],
+                    images=image_inputs,
+                    videos=video_inputs,
+                    padding=True,
+                    return_tensors="pt",
+                )
             except Exception as e:
                 logger.warning(f"Chat template failed, using fallback: {e}")
                 prompt = format_messages(messages)
-                inputs = tokenizer(prompt, return_tensors="pt")
+                inputs = processor(prompt, return_tensors="pt")
         else:
             # Fallback to manual formatting
             prompt = format_messages(messages)
-            inputs = tokenizer(prompt, return_tensors="pt")
+            inputs = processor(prompt, return_tensors="pt")
 
         # Move inputs to same device as model
         device = next(model.parameters()).device
@@ -106,14 +123,14 @@ def chat():
                 max_new_tokens=max_tokens,
                 temperature=temperature,
                 do_sample=temperature > 0,
-                pad_token_id=tokenizer.eos_token_id if tokenizer.eos_token_id else tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id
+                pad_token_id=processor.tokenizer.eos_token_id,
+                eos_token_id=processor.tokenizer.eos_token_id
             )
         
         # Extract only the new tokens (response)
         input_length = inputs['input_ids'].shape[1]
-        response_ids = outputs[0][input_length:]
-        response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
+        response_ids = [out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs["input_ids"], outputs)]
+        response_text = processor.batch_decode(response_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
 
         # Return in expected format
         return jsonify({
