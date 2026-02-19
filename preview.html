@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BioScriptAI — Preview</title>
+  <link rel="stylesheet" href="src/sidebar/sidebar.css">
+  <style>
+    body.preview-page { margin: 0; min-height: 100vh; background: #e6e9ee; display: flex; justify-content: flex-start; }
+    .preview-sidebar { box-shadow: 2px 0 16px rgba(0,0,0,0.12); }
+    .preview-toggle-bar { padding: 8px 12px; background: #1a1d24; color: #fff; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+    .preview-toggle-bar label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  </style>
+</head>
+<body class="preview-page">
+  <div class="preview-toggle-bar">
+    <label><input type="checkbox" id="preview-simulate-paper" /> Simulate “paper open” (show Save to project + AI actions)</label>
+  </div>
+  <div class="preview-sidebar" id="preview-sidebar">
+    <div id="loading-overlay">
+      <div class="loading-logo"></div>
+      <span class="loading-app-name">Bioscript</span>
+      <span class="loading-label">Loading…</span>
+    </div>
+
+    <div class="app-shell">
+      <header class="sidebar-header">
+        <div class="sidebar-header-left">
+          <div class="sidebar-logo" aria-hidden="true"></div>
+          <h1>BioScriptAI</h1>
+        </div>
+        <div class="header-actions">
+          <button class="icon-btn" title="Refresh">🔄</button>
+          <button class="icon-btn" title="Options" onclick="window.open('src/options/options.html', '_blank')">⚙️</button>
+          <button class="icon-btn" title="Clear">🗑️</button>
+        </div>
+      </header>
+
+      <section id="paper-context-bar" class="paper-context-bar">
+        <div id="context-state-idle" class="context-state context-state-idle-full">
+          <div class="database-select-card">
+            <p class="database-select-title">Select database</p>
+            <p class="database-select-subtitle">Select database to search:</p>
+            <div class="database-list">
+              <button type="button" class="database-item" data-url="https://pubmed.ncbi.nlm.nih.gov/"><span class="database-name database-pubmed">PubMed</span></button>
+              <button type="button" class="database-item" data-url="https://scholar.google.com/"><span class="database-name database-scholar">Google Scholar</span></button>
+              <button type="button" class="database-item" data-url="https://www.scopus.com/"><span class="database-name database-scopus">Scopus</span></button>
+              <button type="button" class="database-item" data-url="https://www.sciencedirect.com/"><span class="database-name database-sciencedirect">ScienceDirect</span></button>
+            </div>
+            <div class="database-divider"><span class="database-divider-text">or</span></div>
+            <p class="database-recommend-label">Recommend databases based on my research topic:</p>
+            <div class="database-recommend-input-wrap">
+              <input type="text" id="database-topic-input" class="database-topic-input" placeholder="Input research topic" />
+              <button type="button" id="database-topic-search" class="database-topic-search-btn" title="Search">🔍</button>
+            </div>
+          </div>
+        </div>
+        <div id="context-state-loading" class="context-state hidden"><span class="spinner"></span><span>Loading paper context…</span></div>
+        <div id="context-state-ready" class="context-state hidden">
+          <span class="context-icon">✓</span>
+          <span id="context-title">Sample Paper Title</span>
+          <span id="context-source" class="context-source">example.com</span>
+          <button type="button" id="btn-save-to-project" class="btn-save-to-project">Save to project</button>
+        </div>
+        <div id="context-state-error" class="context-state hidden"><span class="context-icon">⚠️</span><span id="context-error-message"></span><button type="button" class="link-btn">Retry</button></div>
+      </section>
+
+      <section id="paper-view-cta-section" class="hidden">
+        <p class="paper-view-cta"><span class="highlight-word">Highlight text</span> on the page to get an explanation</p>
+        <div class="paper-view-divider">or</div>
+        <div class="ai-actions">
+          <button type="button" class="ai-action-pill quick-action-chip">Extract Key Evidence</button>
+          <button type="button" class="ai-action-pill quick-action-chip">Summarize Conclusions</button>
+          <button type="button" class="ai-action-pill quick-action-chip">Background Overview</button>
+          <button type="button" class="ai-action-pill quick-action-chip">Explain this Figure</button>
+        </div>
+      </section>
+
+      <section class="workspace-section">
+        <div class="workspace-header">
+          <h2>Projects</h2>
+          <button id="btn-toggle-workspace" class="toggle-btn" aria-label="Collapse">−</button>
+        </div>
+        <div id="workspace-content" class="workspace-content">
+          <div class="workspace-tabs"><button class="tab-btn active" data-tab="projects">📁 Projects</button></div>
+          <div id="tab-projects" class="tab-content active">
+            <div id="projects-list" class="projects-list">
+              <div id="projects-empty" class="empty-state">No projects yet. Create one, then save papers from the context bar.</div>
+            </div>
+            <button id="btn-create-project" class="btn-primary">+ Create project</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="question-section">
+        <div class="question-input-wrapper">
+          <textarea id="question-input" class="question-input" placeholder="Type your question…" rows="2"></textarea>
+          <button id="btn-send-question" class="btn-send" title="Send">➤</button>
+        </div>
+        <p class="chat-drag-hint">You can also paste or drag screenshots here.</p>
+        <div id="quick-actions" class="quick-actions">
+          <button type="button" class="quick-action-chip">Extract Key Evidence</button>
+          <button type="button" class="quick-action-chip">Summarize Conclusions</button>
+          <button type="button" class="quick-action-chip">Background Overview</button>
+          <button type="button" class="quick-action-chip">Explain this Figure</button>
+        </div>
+      </section>
+
+      <section class="response-section">
+        <div class="response-header">
+          <h3>Responses</h3>
+          <button id="btn-toggle-responses" class="toggle-btn" aria-label="Collapse">−</button>
+        </div>
+        <div id="response-content" class="response-content">
+          <div id="response-thread" class="response-thread">
+            <div id="response-empty" class="empty-state">Ask a question or use an action above.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div id="modal-create-project" class="modal hidden">
+        <div class="modal-header">
+          <h3>Create project</h3>
+          <button type="button" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <input type="text" id="project-name-input" placeholder="Project name" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary modal-cancel">Cancel</button>
+          <button id="btn-create-project-submit" class="btn-primary">Create</button>
+        </div>
+      </div>
+
+      <div id="modal-save-to-project" class="modal hidden">
+        <div class="modal-header">
+          <h3>Save to project</h3>
+          <button type="button" class="modal-close" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-hint">Save this paper with an AI summary and citation.</p>
+          <div class="search-input-wrap">
+            <input type="text" id="save-to-project-search" placeholder="Search for project" />
+            <span aria-hidden="true">🔍</span>
+          </div>
+          <div id="save-to-project-list" class="project-pick-list"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary modal-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <div id="modal-project-table" class="modal modal-wide hidden">
+        <div class="modal-body">
+          <div class="modal-back-row">
+            <button type="button" class="modal-back-btn" id="project-table-back" aria-label="Back">←</button>
+            <h3 id="project-table-title">Project</h3>
+          </div>
+          <div class="project-table-actions">
+            <button type="button" id="btn-generate-works-cited" class="btn-outline">Generate Works Cited</button>
+            <button type="button" id="btn-generate-annotated-bib" class="btn-outline">Generate Annotated Bib</button>
+          </div>
+          <div class="search-input-wrap">
+            <input type="text" id="project-table-search" placeholder="Search for paper" />
+            <span aria-hidden="true">🔍</span>
+          </div>
+          <div class="project-table-wrapper">
+            <table class="project-table">
+              <thead>
+                <tr><th>Paper</th><th>Overview</th><th>Citation</th></tr>
+              </thead>
+              <tbody id="project-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-secondary modal-cancel">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+(function() {
+  const $ = id => document.getElementById(id);
+  const $$ = sel => document.querySelectorAll(sel);
+  const addClass = (el, c) => el && el.classList.add(c);
+  const removeClass = (el, c) => el && el.classList.remove(c);
+  const hide = el => addClass(el, 'hidden');
+  const show = el => removeClass(el, 'hidden');
+  const escapeHtml = s => (s == null ? '' : String(s))
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // In-memory state for preview
+  let projects = JSON.parse(localStorage.getItem('preview-projects') || '[]');
+  let papersByProject = JSON.parse(localStorage.getItem('preview-papers') || '{}');
+  let currentProjectId = null;
+
+  function saveState() {
+    localStorage.setItem('preview-projects', JSON.stringify(projects));
+    localStorage.setItem('preview-papers', JSON.stringify(papersByProject));
+  }
+
+  // —— Loading ——
+  setTimeout(() => {
+    $('loading-overlay').classList.add('hidden');
+  }, 800);
+
+  // —— Simulate paper open ——
+  const simulatePaper = $('preview-simulate-paper');
+  const stateIdle = $('context-state-idle');
+  const stateReady = $('context-state-ready');
+  const paperCtaSection = $('paper-view-cta-section');
+
+  function updatePreviewState() {
+    const isPaper = simulatePaper && simulatePaper.checked;
+    if (isPaper) {
+      hide(stateIdle);
+      show(stateReady);
+      show(paperCtaSection);
+    } else {
+      show(stateIdle);
+      hide(stateReady);
+      hide(paperCtaSection);
+    }
+  }
+  if (simulatePaper) simulatePaper.addEventListener('change', updatePreviewState);
+
+  // —— Database buttons ——
+  $$('.database-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const url = btn.getAttribute('data-url');
+      if (url) window.open(url, '_blank');
+    });
+  });
+  const topicInput = $('database-topic-input');
+  const topicSearch = $('database-topic-search');
+  if (topicSearch) topicSearch.addEventListener('click', () => {
+    const q = (topicInput && topicInput.value && topicInput.value.trim()) || '';
+    if (q) window.open('https://pubmed.ncbi.nlm.nih.gov/?term=' + encodeURIComponent(q), '_blank');
+  });
+  if (topicInput) topicInput.addEventListener('keydown', e => { if (e.key === 'Enter') topicSearch.click(); });
+
+  // —— Modals ——
+  const overlay = $('modal-overlay');
+  function openModal(id) {
+    overlay.classList.remove('hidden');
+    document.getElementById(id).classList.remove('hidden');
+  }
+  function closeModal(id) {
+    document.getElementById(id).classList.add('hidden');
+    overlay.classList.add('hidden');
+  }
+  function closeAnyModal() {
+    $$('.modal').forEach(m => m.classList.add('hidden'));
+    overlay.classList.add('hidden');
+  }
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeAnyModal(); });
+  $$('.modal-close, .modal-cancel').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modal = btn.closest('.modal');
+      if (modal) closeModal(modal.id);
+    });
+  });
+
+  // —— Create project ——
+  function renderProjectsList() {
+    const list = $('projects-list');
+    const empty = $('projects-empty');
+    if (!list) return;
+    const items = list.querySelectorAll('.project-pick-item');
+    items.forEach(i => i.remove());
+    if (empty) empty.style.display = projects.length ? 'none' : 'block';
+    projects.forEach(p => {
+      const count = (papersByProject[p.id] || []).length;
+      const item = document.createElement('div');
+      item.className = 'project-pick-item';
+      item.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="project-paper-count">${count} paper${count !== 1 ? 's' : ''}</span>`;
+      item.addEventListener('click', () => openProjectTable(p.id, p.name));
+      list.appendChild(item);
+    });
+  }
+
+  $('btn-create-project').addEventListener('click', () => {
+    $('project-name-input').value = '';
+    openModal('modal-create-project');
+  });
+
+  $('btn-create-project-submit').addEventListener('click', () => {
+    const name = ($('project-name-input').value || '').trim();
+    if (!name) return;
+    const id = 'proj-' + Date.now();
+    projects.push({ id, name });
+    saveState();
+    renderProjectsList();
+    closeModal('modal-create-project');
+  });
+
+  // —— Save to project ——
+  $('btn-save-to-project').addEventListener('click', () => {
+    const listEl = $('save-to-project-list');
+    listEl.innerHTML = '';
+    $('save-to-project-search').value = '';
+    if (projects.length === 0) {
+      listEl.innerHTML = '<div class="empty-state">Create a project first (Projects → Create project).</div>';
+    } else {
+      projects.forEach(project => {
+        const count = (papersByProject[project.id] || []).length;
+        const item = document.createElement('div');
+        item.className = 'project-pick-item';
+        item.dataset.search = (project.name || '').toLowerCase();
+        item.innerHTML = `<span>${escapeHtml(project.name)}</span><span class="project-paper-count">${count} paper${count !== 1 ? 's' : ''}</span>`;
+        item.addEventListener('click', () => {
+          const papers = papersByProject[project.id] || [];
+          papers.push({
+            id: 'paper-' + Date.now(),
+            title: ($('context-title') && $('context-title').textContent) || 'Sample Paper',
+            url: 'https://example.com/paper',
+            citation: 'Author, A. (2024). Sample paper. Journal, 1(1), 1–10.',
+            summary: { Objective: 'Preview objective.', Methodology: 'Preview method.', Results: 'Preview results.', Limitations: 'Preview limitations.' }
+          });
+          papersByProject[project.id] = papers;
+          saveState();
+          closeModal('modal-save-to-project');
+        });
+        listEl.appendChild(item);
+      });
+    }
+    openModal('modal-save-to-project');
+  });
+
+  $('save-to-project-search').addEventListener('input', () => {
+    const q = ($('save-to-project-search').value || '').trim().toLowerCase();
+    $$('#save-to-project-list .project-pick-item').forEach(el => {
+      el.style.display = !q || (el.dataset.search || '').includes(q) ? '' : 'none';
+    });
+  });
+
+  // —— Project table ——
+  function openProjectTable(projectId, projectName) {
+    currentProjectId = projectId;
+    $('project-table-title').textContent = projectName || 'Project';
+    const papers = papersByProject[projectId] || [];
+    const tbody = $('project-table-body');
+    tbody.innerHTML = '';
+    $('project-table-search').value = '';
+    papers.forEach(p => {
+      const tr = document.createElement('tr');
+      const summaryText = typeof p.summary === 'object' ? Object.entries(p.summary || {}).map(([k, v]) => k + ': ' + v).join(' ') : (p.summary || '');
+      tr.dataset.search = ((p.title || '') + ' ' + (p.citation || '') + ' ' + summaryText).toLowerCase();
+      tr.innerHTML = `
+        <td><a href="${escapeHtml(p.url || '#')}" target="_blank" rel="noopener">${escapeHtml(p.title || 'Untitled')}</a></td>
+        <td><div class="project-table-overview">${escapeHtml(summaryText || '—')}</div></td>
+        <td><button type="button" class="link-btn copy-citation" data-citation="${escapeHtml((p.citation || '').replace(/"/g, '&quot;'))}">Copy</button><span class="citation-text">${escapeHtml(p.citation || '—')}</span></td>
+      `;
+      tr.querySelector('.copy-citation')?.addEventListener('click', function() {
+        const cit = this.getAttribute('data-citation');
+        if (cit) navigator.clipboard.writeText(cit.replace(/&quot;/g, '"'));
+      });
+      tbody.appendChild(tr);
+    });
+    openModal('modal-project-table');
+  }
+
+  $('project-table-back').addEventListener('click', () => closeModal('modal-project-table'));
+
+  $('project-table-search').addEventListener('input', () => {
+    const q = ($('project-table-search').value || '').trim().toLowerCase();
+    $$('#project-table-body tr').forEach(tr => {
+      tr.style.display = !q || (tr.dataset.search || '').includes(q) ? '' : 'none';
+    });
+  });
+
+  const papersForCurrentProject = () => (currentProjectId && papersByProject[currentProjectId]) || [];
+  $('btn-generate-works-cited').addEventListener('click', () => {
+    const text = papersForCurrentProject().map(p => p.citation || '').filter(Boolean).join('\n\n');
+    if (text) navigator.clipboard.writeText(text);
+  });
+  $('btn-generate-annotated-bib').addEventListener('click', () => {
+    const parts = papersForCurrentProject().map(p => {
+      const sum = typeof p.summary === 'object' ? Object.entries(p.summary || {}).map(([k, v]) => k + ': ' + v).join(' ') : (p.summary || '');
+      return (p.citation || '') + '\n' + (sum || '');
+    });
+    if (parts.length) navigator.clipboard.writeText(parts.join('\n\n'));
+  });
+
+  // —— Workspace collapse ——
+  $('btn-toggle-workspace')?.addEventListener('click', () => $('workspace-content')?.classList.toggle('collapsed'));
+  $('btn-toggle-responses')?.addEventListener('click', () => $('response-content')?.classList.toggle('collapsed'));
+
+  // —— Question / quick actions ——
+  const questionInput = $('question-input');
+  const responseThread = $('response-thread');
+  const responseEmpty = $('response-empty');
+
+  function addResponse(text, isUser) {
+    if (responseEmpty) responseEmpty.style.display = 'none';
+    const div = document.createElement('div');
+    div.className = isUser ? 'response-item response-user' : 'response-item response-assistant';
+    div.innerHTML = '<div class="response-bubble">' + escapeHtml(text) + '</div>';
+    responseThread.appendChild(div);
+    responseThread.scrollTop = responseThread.scrollHeight;
+  }
+
+  function sendQuestion(text) {
+    const t = (text || (questionInput && questionInput.value) || '').trim();
+    if (!t) return;
+    addResponse(t, true);
+    if (questionInput) questionInput.value = '';
+    setTimeout(() => addResponse('This is a preview. In the extension, an AI would answer here.', false), 600);
+  }
+
+  $('btn-send-question').addEventListener('click', () => sendQuestion());
+  questionInput?.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuestion(); } });
+
+  $$('.quick-action-chip').forEach(chip => {
+    chip.addEventListener('click', () => sendQuestion(chip.textContent.trim()));
+  });
+
+  // Init
+  renderProjectsList();
+})();
+  </script>
+</body>
+</html>

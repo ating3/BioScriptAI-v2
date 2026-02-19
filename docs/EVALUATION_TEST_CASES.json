@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "BioScriptAI Evaluation Test Cases",
+  "version": "1.0.0",
+  "categories": {
+    "summary_accuracy": {
+      "metric": "pass_rate",
+      "target_min": 0.9,
+      "rubric": {
+        "3": "All required sections present; key facts from excerpt; no clear hallucinations",
+        "2": "Sections present; minor omission or one mild hallucination",
+        "1": "Missing section; major omission; invented protocol/result",
+        "0": "No structured summary or unrelated output"
+      },
+      "cases": [
+        {
+          "id": "SUM-01",
+          "summary_goal": "methods_focus",
+          "expected_key_facts": ["treatment", "24 h", "extraction", "kit"],
+          "expected_sections": ["Objective", "Methodology", "Results", "Limitations"],
+          "must_not_contain": []
+        },
+        {
+          "id": "SUM-02",
+          "summary_goal": "results_focus",
+          "expected_key_facts": ["p < 0.01", "fold change", "2.3", "0.4"],
+          "expected_sections": ["Objective", "Methodology", "Results", "Limitations"],
+          "must_not_contain": []
+        },
+        {
+          "id": "SUM-03",
+          "summary_goal": "balanced",
+          "expected_key_facts": ["limitation", "in vitro"],
+          "expected_sections": ["Objective", "Methodology", "Results", "Limitations"],
+          "must_not_contain": []
+        },
+        {
+          "id": "SUM-04",
+          "summary_goal": "balanced",
+          "expected_key_facts": [],
+          "expected_sections": ["Objective", "Methodology", "Results", "Limitations"],
+          "must_not_contain": ["invented specific aim when not stated"]
+        }
+      ]
+    },
+    "qa_context_awareness": {
+      "metric": "pass_rate",
+      "target_min": 0.9,
+      "deferral_cases": ["QA-02", "QA-04"],
+      "rubric": {
+        "3": "Grounded in context; no hallucination; correct deferral when context lacks answer",
+        "2": "Mostly correct; one minor error or vague deferral",
+        "1": "Invents information or ignores context",
+        "0": "Unrelated or empty"
+      },
+      "cases": [
+        {
+          "id": "QA-01",
+          "expected_contains": ["ChIP-seq"],
+          "expected_deferral": false
+        },
+        {
+          "id": "QA-02",
+          "expected_contains": ["not"],
+          "expected_deferral": true,
+          "must_not_contain": ["sample size", "n ="]
+        },
+        {
+          "id": "QA-03",
+          "expected_contains": ["constant", "mutation rate"]
+        },
+        {
+          "id": "QA-04",
+          "expected_deferral": true,
+          "expected_contains": ["not", "Results", "section"]
+        }
+      ]
+    },
+    "term_definition": {
+      "metric": "pass_rate",
+      "target_min": 0.85,
+      "rubric": {
+        "3": "Definition correct and contextual; ≥1 usage example from excerpt; valid JSON",
+        "2": "Definition mostly correct; usage example present but incomplete",
+        "1": "Definition wrong or generic; or no usage example from excerpt",
+        "0": "Invalid JSON or unrelated"
+      },
+      "cases": [
+        { "id": "DEF-01", "term": "off-target effects", "expected_concept": "unintended", "require_usage_example": true },
+        { "id": "DEF-02", "term": "q-value", "expected_concept": "significance", "require_usage_example": true },
+        { "id": "DEF-03", "term": "SEM", "expected_concept": "standard error", "require_usage_example": true }
+      ]
+    },
+    "figure_understanding": {
+      "metric": "pass_rate",
+      "target_min": 0.8,
+      "rubric": {
+        "3": "Correct axes/headers; ≥1 key value/trend correct; coherent explanation",
+        "2": "Structure mostly correct; minor value error or vague explanation",
+        "1": "Wrong axes/values or no meaningful explanation",
+        "0": "No extraction or unrelated"
+      },
+      "cases": [
+        { "id": "FIG-01", "type": "figure", "expected_axes": ["Time", "Fold change"], "expected_in_explanation": ["time", "expression"] },
+        { "id": "FIG-02", "type": "figure", "expected_values": ["2.1", "0.8"], "expected_in_explanation": ["condition", "comparison"] },
+        { "id": "FIG-03", "type": "table", "expected_headers": ["Gene", "log2FC", "p-value"], "expected_numeric": true }
+      ]
+    },
+    "zotero_integration": {
+      "metric": "success_rate",
+      "target_min": 1.0,
+      "rubric": { "1": "HTTP success and response matches expected", "0": "HTTP error or missing required data" },
+      "cases": [
+        { "id": "ZOT-01", "action": "validate_key", "expected_status": 200, "expected_keys": ["userID"] },
+        { "id": "ZOT-02", "action": "validate_key_invalid", "expected_status": 403 },
+        { "id": "ZOT-03", "action": "create_collection", "expected_status": 200, "expected_keys": ["successful"] },
+        { "id": "ZOT-04", "action": "create_item", "expected_status": 200, "expected_keys": ["success"] },
+        { "id": "ZOT-05", "action": "add_item_to_collection", "expected_status": [200, 204] },
+        { "id": "ZOT-06", "action": "export_bibtex", "expected_status": 200, "expected_content": "@" },
+        { "id": "ZOT-07", "action": "export_apa", "expected_status": 200, "expected_content": "csl-entry" }
+      ]
+    },
+    "ui_responsiveness": {
+      "metric": "pass_rate",
+      "target_min": 0.8,
+      "rubric": {
+        "3": "Within target (e.g. p95 < threshold)",
+        "2": "Within 1.5× target",
+        "1": "> 1.5× target or timeout",
+        "0": "N/A"
+      },
+      "cases": [
+        { "id": "UI-01", "scenario": "sidebar_open", "metric": "latency_ms", "target_p95_max": 500 },
+        { "id": "UI-02", "scenario": "project_list_load", "metric": "latency_ms", "target_p95_max": 2000 },
+        { "id": "UI-03", "scenario": "qa_first_token", "metric": "latency_ms", "target_p95_max": 10000 },
+        { "id": "UI-04", "scenario": "scroll_to_buffer_update", "metric": "latency_ms", "target_p95_max": 400 },
+        { "id": "UI-05", "scenario": "workspace_tab_switch", "metric": "latency_ms", "target_p95_max": 300 }
+      ]
+    }
+  }
+}
