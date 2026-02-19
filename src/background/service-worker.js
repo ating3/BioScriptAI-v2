@@ -55,6 +55,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'setPageContext') {
     const { context, title, url } = request;
     if (context && context.text && url) {
+      // Clear buffer so we don't mix in chunks from a previous paper/tab
+      contextManager.clear();
       contextManager.setCurrentPaper({ title, url, sourceId: url });
       contextManager.updateFromVisibleChunk({
         text: context.text,
