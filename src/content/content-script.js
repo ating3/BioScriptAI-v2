@@ -20,6 +20,14 @@
       return 'pdf';
     }
     
+    // Known article/journal hosts: treat as HTML so we always try to extract (DOM may vary)
+    if (url.includes('pubmed.ncbi.nlm.nih.gov') || url.includes('ncbi.nlm.nih.gov') ||
+        url.includes('frontiersin.org') || url.includes('doi.org') ||
+        url.includes('nature.com') || url.includes('plos.org') || url.includes('sciencedirect.com') ||
+        url.includes('springer.com') || url.includes('biomedcentral.com') || url.includes('mdpi.com')) {
+      return 'html';
+    }
+    
     // HTML article detection
     if (document.querySelector('article') ||
         document.querySelector('[role="main"]') ||
@@ -81,10 +89,26 @@
    * Extract visible text from HTML
    */
   function extractVisibleFromHTML(viewport) {
-    const root = document.querySelector('[data-bioscript-main]') ||
-                 document.querySelector('article') ||
-                 document.querySelector('[role="main"]');
-    
+    const url = window.location.href;
+    const isKnownArticleSite = url.includes('pubmed.ncbi.nlm.nih.gov') || url.includes('ncbi.nlm.nih.gov') ||
+      url.includes('frontiersin.org') || url.includes('nature.com') || url.includes('plos.org') ||
+      url.includes('sciencedirect.com') || url.includes('springer.com') || url.includes('biomedcentral.com') || url.includes('mdpi.com');
+
+    let root = document.querySelector('[data-bioscript-main]') ||
+               document.querySelector('article') ||
+               document.querySelector('[role="main"]');
+    // Known article sites: fallback to main, common IDs, or body when standard selectors miss
+    if (!root && isKnownArticleSite) {
+      root = document.querySelector('main') ||
+             document.querySelector('#main_content') ||
+             document.querySelector('#content') ||
+             document.querySelector('[role="main"]') ||
+             document.querySelector('.article-body') ||
+             document.querySelector('.c-article-body') ||
+             document.querySelector('#article-body') ||
+             document.body;
+    }
+
     if (!root) {
       return { text: null, sectionId: null, scrollY: viewport.scrollY, source: 'no_content' };
     }
@@ -109,13 +133,35 @@
 
     // Group into blocks (paragraphs)
     const blocks = groupIntoBlocks(visibleNodes);
-    const text = blocks.map(block => block.textContent.trim()).join('\n\n');
+    let text = blocks.map(block => block.textContent.trim()).join('\n\n');
+
+    // Known article sites: if viewport filtering gave little/no text (e.g. SPA or off-screen layout), take all text from root
+    const MIN_VISIBLE_CHARS = 400;
+    const MAX_FULL_TEXT_CHARS = 120000;
+    if (isKnownArticleSite && (!text || text.trim().length < MIN_VISIBLE_CHARS)) {
+      const skipTags = new Set(['SCRIPT', 'STYLE', 'NAV', 'HEADER', 'FOOTER', 'IFRAME', 'NOSCRIPT']);
+      const allTexts = [];
+      const fullWalker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      let n;
+      while (n = fullWalker.nextNode()) {
+        const parent = n.parentElement;
+        if (!parent) continue;
+        const tag = parent.tagName && parent.tagName.toUpperCase();
+        if (skipTags.has(tag)) continue;
+        const t = n.textContent.trim();
+        if (t) allTexts.push(t);
+      }
+      const fullText = allTexts.join(' ').replace(/\s+/g, ' ').trim();
+      if (fullText && fullText.length > (text || '').length) {
+        text = fullText.length > MAX_FULL_TEXT_CHARS ? fullText.slice(0, MAX_FULL_TEXT_CHARS) + '…' : fullText;
+      }
+    }
 
     // Try to get section ID
     const sectionId = getSectionId(blocks);
 
     return {
-      text,
+      text: text || null,
       sectionId,
       scrollY: viewport.scrollY,
       source: 'html'
@@ -171,7 +217,15 @@
     if (pageType === 'pdf') {
       return extractVisibleFromPDF(viewport);
     } else if (pageType === 'html') {
-      return extractVisibleFromHTML(viewport);
+      const result = extractVisibleFromHTML(viewport);
+      // If we got little or no text (e.g. viewport/layout quirks), try body-based extraction
+      if (!result.text || result.text.trim().length < 300) {
+        const bodyResult = extractVisibleFromBody(viewport);
+        if (bodyResult.text && bodyResult.text.length > (result.text || '').length) {
+          return bodyResult;
+        }
+      }
+      return result;
     } else {
       // Fallback: try to get any visible text from the page
       const fallback = extractVisibleFromBody(viewport);

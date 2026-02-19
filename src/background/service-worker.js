@@ -52,12 +52,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'setPageContext') {
+    const { context, title, url } = request;
+    if (context && context.text && url) {
+      contextManager.setCurrentPaper({ title, url, sourceId: url });
+      contextManager.updateFromVisibleChunk({
+        text: context.text,
+        scrollY: context.scrollY ?? 0,
+        pageOrSection: context.sectionId ?? null,
+        source: context.source ?? 'html'
+      });
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (request.action === 'clearPageContext') {
+    contextManager.clear();
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (request.action === 'scrollDetected') {
     if (settings.screenInferenceEnabled) {
       // Capture visible context on scroll
       chrome.tabs.sendMessage(sender.tab.id, { action: 'getVisibleContext' }, (response) => {
         if (response && response.text) {
-          contextManager.updateFromVisibleChunk(response);
+          contextManager.updateFromVisibleChunk({
+            text: response.text,
+            scrollY: response.scrollY ?? 0,
+            pageOrSection: response.sectionId ?? null,
+            source: response.source ?? 'html'
+          });
+          // Notify sidebar so it can update displayed context
+          chrome.runtime.sendMessage({ action: 'contextUpdated', context: response }).catch(() => {});
         }
       });
     }

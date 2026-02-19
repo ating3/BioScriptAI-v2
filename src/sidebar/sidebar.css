@@ -120,6 +120,22 @@ body {
   margin-left: auto;
 }
 
+.context-updated-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--accent-color);
+  background: rgba(var(--accent-rgb, 59, 130, 246), 0.1);
+  border-radius: 4px;
+  animation: context-updated-fade 2.5s ease-out forwards;
+}
+
+@keyframes context-updated-fade {
+  0%, 60% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 /* Workspace Section */
 .workspace-section {
   border-bottom: 1px solid var(--border-color);

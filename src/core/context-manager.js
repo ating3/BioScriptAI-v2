@@ -62,18 +62,21 @@ export class ContextManager {
   }
 
   /**
-   * Deduplicate by source ID
+   * Deduplicate by source and section; keep distinct scroll positions so scroll updates are not dropped.
+   * When pageOrSection is null (common for HTML), use a scroll bucket so different viewports are kept.
+   * Keeps the most recent entry per key so scrolling updates the context.
    */
   dedupeBySource() {
     if (!this.sourceId) return;
-    
-    const seen = new Set();
-    this.scrollBuffer = this.scrollBuffer.filter(entry => {
-      const key = `${this.sourceId}-${entry.pageOrSection}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+
+    const scrollBucketSize = 400; // px: same bucket = same general scroll region
+    const latestByKey = new Map();
+    for (const entry of this.scrollBuffer) {
+      const sectionPart = entry.pageOrSection != null ? String(entry.pageOrSection) : `scroll-${Math.floor(entry.scrollY / scrollBucketSize)}`;
+      const key = `${this.sourceId}-${sectionPart}`;
+      latestByKey.set(key, entry); // later entry overwrites => keep most recent
+    }
+    this.scrollBuffer = Array.from(latestByKey.values());
   }
 
   /**

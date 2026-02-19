@@ -12,6 +12,7 @@ let currentTab = null;
 document.addEventListener('DOMContentLoaded', () => {
   initializeSidebar();
   setupEventListeners();
+  setupContextUpdateListener();
   loadWorkspace();
   checkCurrentTab();
 });
@@ -34,6 +35,10 @@ function initializeSidebar() {
  */
 function setupEventListeners() {
   // Header actions
+  document.getElementById('btn-refresh-context').addEventListener('click', () => {
+    checkCurrentTab();
+  });
+
   document.getElementById('btn-options').addEventListener('click', () => {
     chrome.runtime.openOptionsPage();
   });
@@ -85,6 +90,37 @@ function setupEventListeners() {
 }
 
 /**
+ * Listen for context updates from background (e.g. on scroll)
+ */
+function setupContextUpdateListener() {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.action === 'contextUpdated' && message.context) {
+      currentContext = message.context;
+      showContextUpdatedIndicator();
+    }
+  });
+}
+
+/**
+ * Show brief "Context updated" indicator in the context bar
+ */
+function showContextUpdatedIndicator() {
+  const readyEl = document.getElementById('context-state-ready');
+  if (!readyEl || !readyEl.classList.contains('context-state')) return;
+  const existing = document.getElementById('context-updated-badge');
+  if (existing) existing.remove();
+  const badge = document.createElement('span');
+  badge.id = 'context-updated-badge';
+  badge.className = 'context-updated-badge';
+  badge.textContent = 'Context updated';
+  badge.setAttribute('aria-live', 'polite');
+  readyEl.appendChild(badge);
+  setTimeout(() => {
+    if (badge.parentNode) badge.remove();
+  }, 2500);
+}
+
+/**
  * Check current tab and load context
  */
 async function checkCurrentTab() {
@@ -106,11 +142,19 @@ async function checkCurrentTab() {
 
   function onContextResult(response) {
     if (response && response.text) {
+      const title = extractTitleFromUrl(tab.url);
       updateContextState('ready', {
-        title: extractTitleFromUrl(tab.url),
+        title,
         source: tab.url
       });
       currentContext = response;
+      // Sync to background so QA and scroll buffer use this context
+      chrome.runtime.sendMessage({
+        action: 'setPageContext',
+        context: response,
+        title,
+        url: tab.url
+      });
     } else {
       const reason = response?.source === 'unsupported' || response?.source === 'no_content' || response?.source === 'pdf_no_text'
         ? 'No readable content found. Try a journal article page or a page with visible text.'
@@ -133,7 +177,7 @@ async function checkCurrentTab() {
                 return;
               }
               // Give the injected script a moment to register its listener
-              setTimeout(() => tryGetContext(false), 100);
+              setTimeout(() => tryGetContext(false), 250);
             }
           );
           return;
@@ -362,6 +406,7 @@ function clearContext() {
   updateContextState('idle');
   document.getElementById('response-thread').innerHTML = 
     '<div class="empty-state">Ask a question or use a quick action above.</div>';
+  chrome.runtime.sendMessage({ action: 'clearPageContext' }).catch(() => {});
 }
 
 /**

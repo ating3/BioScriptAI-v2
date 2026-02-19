@@ -12,7 +12,11 @@
   ],
   "host_permissions": [
     "https://api.zotero.org/*",
-    "http://localhost/*"
+    "http://localhost/*",
+    "https://pubmed.ncbi.nlm.nih.gov/*",
+    "https://*.ncbi.nlm.nih.gov/*",
+    "https://www.frontiersin.org/*",
+    "https://*.frontiersin.org/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js",
