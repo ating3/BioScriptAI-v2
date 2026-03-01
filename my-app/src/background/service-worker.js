@@ -168,6 +168,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: true })
     return true
   }
+
+  // Define word in context of paper: get paper from tab, call LLM, add user + assistant messages to chat
+  if (message.type === 'DEFINE_WORD') {
+    const { data } = message
+    const tabId = sender.tab?.id
+    const pageUrl = data?.url || sender.tab?.url || ''
+    if (!data?.word || !tabId) {
+      sendResponse({ success: false, error: 'Missing word or tab' })
+      return true
+    }
+    const term = String(data.word).trim()
+    if (!term) {
+      sendResponse({ success: false, error: 'Empty term' })
+      return true
+    }
+    let responded = false
+    function reply(ok, errMsg) {
+      if (responded) return
+      responded = true
+      try {
+        sendResponse(ok ? { success: true } : { success: false, error: errMsg || 'Failed' })
+      } catch (_) {}
+    }
+    handleDefineWord(tabId, term, data.context || '', pageUrl)
+      .then(() => reply(true))
+      .catch((err) => reply(false, err && err.message ? err.message : String(err)))
+    return true
+  }
 })
 
 // ─── Injected into page to capture in-viewport figures ────────────────────
@@ -365,6 +393,52 @@ async function handleLLMRequest(payload) {
 
   const data = await response.json()
   return data.choices[0].message.content
+}
+
+async function handleDefineWord(tabId, term, viewportContext, pageUrl) {
+  const [paperResult, storage] = await Promise.all([
+    new Promise((resolve) => {
+      chrome.scripting.executeScript(
+        { target: { tabId }, func: extractPaperFromPage },
+        (results) => {
+          if (chrome.runtime.lastError || !results?.[0]?.result) resolve(null)
+          else resolve(results[0].result)
+        }
+      )
+    }),
+    new Promise((resolve) => {
+      chrome.storage.local.get(['apiKey', 'chatMessages', 'deepResearch'], resolve)
+    }),
+  ])
+
+  const apiKey = storage.apiKey
+  if (!apiKey) throw new Error('No API key configured. Add your OpenAI key in Bioscript Settings.')
+
+  const paper = paperResult
+  const paperContext = paper
+    ? `Paper: "${paper.title}" by ${(paper.authors || []).slice(0, 3).join(', ')}. Abstract: ${(paper.abstract || '').slice(0, 600)}.`
+    : 'No paper metadata available.'
+  const contextSnippet = viewportContext ? `Visible context: ${viewportContext.slice(0, 400)}.` : ''
+
+  const systemPrompt = `You are Bioscript, an expert academic research assistant. Define the given term concisely in the context of this paper. Be precise and brief (2–4 sentences).`
+  const userMsg = `${paperContext} ${contextSnippet}\n\nDefine: "${term}"`
+
+  const definition = await handleLLMRequest({
+    apiKey,
+    model: storage.deepResearch ? 'gpt-4o' : 'gpt-4o-mini',
+    systemPrompt,
+    messages: [{ role: 'user', content: userMsg }],
+  })
+
+  const paperId = paper?.id || btoa(unescape(encodeURIComponent(pageUrl || 'unknown'))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)
+  const chatMessages = storage.chatMessages || {}
+  const list = chatMessages[paperId] || []
+  const ts = Date.now()
+  list.push({ role: 'user', content: `define "${term}"`, timestamp: ts })
+  list.push({ role: 'assistant', content: definition, timestamp: ts + 1 })
+  chatMessages[paperId] = list
+  await new Promise((resolve) => chrome.storage.local.set({ chatMessages }, resolve))
+  chrome.runtime.sendMessage({ type: 'CHAT_MESSAGES_UPDATED', paperId, chatMessages: list }).catch(() => {})
 }
 
 async function fetchPaperMetadata(url) {

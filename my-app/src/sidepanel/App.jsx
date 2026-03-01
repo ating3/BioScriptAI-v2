@@ -69,31 +69,61 @@ export default function App() {
   // Load persisted state from chrome.storage
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.get(['apiKey', 'researchInterest', 'collections', 'folders', 'theme'], (result) => {
+      chrome.storage.local.get(['apiKey', 'researchInterest', 'collections', 'folders', 'theme', 'chatMessages'], (result) => {
         if (result.apiKey) useStore.setState({ apiKey: result.apiKey })
         if (result.researchInterest) useStore.setState({ researchInterest: result.researchInterest })
         if (result.collections) useStore.setState({ collections: result.collections })
         if (result.folders) useStore.setState({ folders: result.folders })
         if (result.theme) useStore.setState({ theme: result.theme })
+        if (result.chatMessages && typeof result.chatMessages === 'object') useStore.setState({ chatMessages: result.chatMessages })
       })
     }
   }, [])
 
-  // Persist key state to chrome.storage
+  // Persist key state to chrome.storage. Don't write empty chatMessages or we overwrite
+  // definitions the background just wrote when the panel opens.
   useEffect(() => {
     const unsub = useStore.subscribe((state) => {
       if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-        chrome.storage.local.set({
+        const payload = {
           apiKey: state.apiKey,
           researchInterest: state.researchInterest,
           collections: state.collections,
           folders: state.folders,
           theme: state.theme,
-        })
+        }
+        if (state.chatMessages && Object.keys(state.chatMessages).length > 0) {
+          payload.chatMessages = state.chatMessages
+        }
+        chrome.storage.local.set(payload)
       }
     })
     return unsub
   }, [])
+
+  // When background adds a definition to chat, merge into store so it appears immediately
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.runtime?.onMessage) return
+    const handleMessage = (msg) => {
+      if (msg.type === 'CHAT_MESSAGES_UPDATED' && msg.paperId && Array.isArray(msg.chatMessages)) {
+        useStore.setState((s) => ({
+          chatMessages: { ...s.chatMessages, [msg.paperId]: msg.chatMessages },
+        }))
+      }
+    }
+    chrome.runtime.onMessage.addListener(handleMessage)
+    return () => chrome.runtime.onMessage.removeListener(handleMessage)
+  }, [])
+
+  // Re-read chat from storage when switching to Paper view so we always show latest (e.g. after Define)
+  useEffect(() => {
+    if (typeof chrome === 'undefined' || !chrome.storage?.local || sidebarState !== 'active-paper') return
+    chrome.storage.local.get(['chatMessages'], (result) => {
+      if (result.chatMessages && typeof result.chatMessages === 'object' && Object.keys(result.chatMessages).length > 0) {
+        useStore.setState((s) => ({ chatMessages: result.chatMessages }))
+      }
+    })
+  }, [sidebarState])
 
   const views = {
     'discovery': <DiscoveryView />,

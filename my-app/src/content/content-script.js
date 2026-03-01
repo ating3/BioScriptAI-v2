@@ -145,25 +145,142 @@
     }, 300)
   }
 
-  // ─── Double-click Definition Trigger ──────────────────────────────
-  function onDoubleClick(e) {
-    const selection = window.getSelection()
-    const word = selection?.toString().trim()
-    if (!word || word.split(' ').length > 5) return
+  // ─── Define popup: selectionchange + debounce (no mouseup — more reliable across sites) ──────────────
+  let definePopupEl = null
+  let definePopupShownAt = 0
+  let defineSelectionDebounce = null
 
-    const range = selection.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
+  function showDefinePopup(rect, selectedText) {
+    if (definePopupEl) {
+      definePopupEl.remove()
+      definePopupEl = null
+    }
+    let left = rect.left + rect.width / 2 - 28
+    let top = rect.top - 32
+    left = Math.max(8, Math.min(left, window.innerWidth - 70))
+    top = Math.max(8, Math.min(top, window.innerHeight - 36))
 
-    chrome.runtime.sendMessage({
-      type: 'DEFINE_WORD',
-      data: {
-        word,
-        context: getViewportText().slice(0, 500),
-        position: { x: rect.left + rect.width / 2, y: rect.top },
-        url: window.location.href,
-      },
+    const popup = document.createElement('div')
+    popup.id = 'bioscript-define-popup'
+    popup.textContent = 'Define'
+    popup.style.cssText = [
+      'position:fixed',
+      'z-index:2147483647',
+      'padding:6px 12px',
+      'font-size:13px',
+      'font-family:system-ui,sans-serif',
+      'background:#2563EB',
+      'color:white',
+      'border-radius:6px',
+      'cursor:pointer',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.25)',
+      'left:' + left + 'px',
+      'top:' + top + 'px',
+    ].join(';')
+    popup.addEventListener('click', function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!selectedText) return
+      popup.textContent = 'Defining…'
+      popup.style.pointerEvents = 'none'
+      chrome.runtime.sendMessage(
+        {
+          type: 'DEFINE_WORD',
+          data: {
+            word: selectedText,
+            context: getViewportText().slice(0, 500),
+            url: window.location.href,
+          },
+        },
+        function (response) {
+          if (definePopupEl) {
+            definePopupEl.remove()
+            definePopupEl = null
+          }
+          window.getSelection()?.removeAllRanges()
+          if (chrome.runtime.lastError) {
+            showDefineError(chrome.runtime.lastError.message || 'Extension error')
+            return
+          }
+          if (response && !response.success) {
+            showDefineError(response.error || 'Define failed')
+          }
+        }
+      )
     })
+    document.body.appendChild(popup)
+    definePopupEl = popup
+    definePopupShownAt = Date.now()
   }
+
+  function hideDefinePopup() {
+    if (definePopupEl) {
+      definePopupEl.remove()
+      definePopupEl = null
+    }
+  }
+
+  function showDefineError(msg) {
+    var toast = document.createElement('div')
+    toast.id = 'bioscript-define-toast'
+    toast.textContent = msg
+    toast.style.cssText = [
+      'position:fixed',
+      'z-index:2147483647',
+      'top:12px',
+      'left:50%',
+      'transform:translateX(-50%)',
+      'padding:8px 14px',
+      'font-size:12px',
+      'font-family:system-ui,sans-serif',
+      'background:#B91C1C',
+      'color:white',
+      'border-radius:8px',
+      'box-shadow:0 2px 12px rgba(0,0,0,0.3)',
+      'max-width:90%',
+    ].join(';')
+    document.body.appendChild(toast)
+    setTimeout(function () {
+      if (toast.parentNode) toast.remove()
+    }, 4000)
+  }
+
+  function onSelectionChange() {
+    if (manualSelectMode) return
+    if (defineSelectionDebounce) clearTimeout(defineSelectionDebounce)
+    defineSelectionDebounce = setTimeout(function () {
+      defineSelectionDebounce = null
+      const sel = window.getSelection()
+      const text = (sel && sel.toString()) ? sel.toString().trim() : ''
+      if (!text || text.length > 80) {
+        hideDefinePopup()
+        return
+      }
+      try {
+        if (sel.rangeCount < 1) {
+          hideDefinePopup()
+          return
+        }
+        const range = sel.getRangeAt(0)
+        const rect = range.getBoundingClientRect()
+        if (rect.width === 0 && rect.height === 0) {
+          hideDefinePopup()
+          return
+        }
+        showDefinePopup(rect, text)
+      } catch (err) {
+        hideDefinePopup()
+      }
+    }, 180)
+  }
+
+  document.addEventListener('selectionchange', onSelectionChange)
+  document.addEventListener('click', function (e) {
+    if (!definePopupEl) return
+    if (e.target === definePopupEl || definePopupEl.contains(e.target)) return
+    if (Date.now() - definePopupShownAt < 300) return
+    hideDefinePopup()
+  })
 
   // ─── Manual Select Tool ────────────────────────────────────────────
   let manualSelectMode = false
@@ -176,6 +293,16 @@
     if (message.type === 'DISABLE_MANUAL_SELECT') {
       manualSelectMode = false
       document.body.style.cursor = ''
+    }
+    if (message.type === 'DEFINE_SELECTION' && message.text) {
+      chrome.runtime.sendMessage({
+        type: 'DEFINE_WORD',
+        data: {
+          word: message.text.trim(),
+          context: getViewportText().slice(0, 500),
+          url: window.location.href,
+        },
+      })
     }
     if (message.type === 'GET_FULL_TEXT') {
       chrome.runtime.sendMessage({
@@ -202,7 +329,7 @@
     }
   })
 
-  document.addEventListener('mouseup', () => {
+  document.addEventListener('mouseup', function () {
     if (!manualSelectMode) return
     const selection = window.getSelection()
     const text = selection?.toString().trim()
@@ -223,7 +350,7 @@
 
   // ─── Init ──────────────────────────────────────────────────────────
   window.addEventListener('scroll', onScroll, { passive: true })
-  document.addEventListener('dblclick', onDoubleClick)
+  window.addEventListener('scroll', hideDefinePopup, { passive: true })
 
   // Initial detection
   if (document.readyState === 'complete') {

@@ -6,8 +6,64 @@ import {
   Copy, Check, Loader2, Microscope, Atom, Leaf, Brain, Dna, Globe,
   Folder, FolderOpen, FolderPlus, Inbox, ScanSearch,
 } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import useStore from '../store/useStore'
 import { generateBibTeX, generateAPA } from '../lib/utils'
+
+// Full markdown renderer (bold, italic, headers, lists, code, links, tables, etc.) with compact styling
+function MarkdownRenderer({ text, isDark = false, className, style = {} }) {
+  if (text == null || typeof text !== 'string') return null
+  const baseColor = isDark ? '#D1D5DB' : '#374151'
+  const mutedColor = isDark ? '#9CA3AF' : '#6B7280'
+  const borderColor = isDark ? '#374151' : '#E5E7EB'
+  const codeBg = isDark ? '#1F2937' : '#F3F4F6'
+  const linkColor = '#2563EB'
+
+  const components = {
+    p: ({ children }) => <p style={{ margin: 0, color: baseColor }}>{children}</p>,
+    h1: ({ children }) => <h1 style={{ margin: 0, fontSize: '1.1em', fontWeight: 700, color: baseColor }}>{children}</h1>,
+    h2: ({ children }) => <h2 style={{ margin: 0, fontSize: '1.05em', fontWeight: 700, color: baseColor }}>{children}</h2>,
+    h3: ({ children }) => <h3 style={{ margin: 0, fontSize: '1em', fontWeight: 600, color: baseColor }}>{children}</h3>,
+    h4: ({ children }) => <h4 style={{ margin: 0, fontSize: '0.95em', fontWeight: 600, color: baseColor }}>{children}</h4>,
+    h5: ({ children }) => <h5 style={{ margin: 0, fontSize: '0.9em', fontWeight: 600, color: baseColor }}>{children}</h5>,
+    h6: ({ children }) => <h6 style={{ margin: 0, fontSize: '0.85em', fontWeight: 600, color: baseColor }}>{children}</h6>,
+    strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+    em: ({ children }) => <em style={{ fontStyle: 'italic' }}>{children}</em>,
+    code: ({ className: _cn, inline, children, ...props }) =>
+      inline ? (
+        <code style={{ background: codeBg, padding: '0.1em 0.3em', borderRadius: 3, fontSize: '0.9em', fontFamily: 'ui-monospace, monospace' }} {...props}>{children}</code>
+      ) : (
+        <code style={{ display: 'block', background: codeBg, padding: '0.4em 0.5em', borderRadius: 4, fontSize: '0.85em', fontFamily: 'ui-monospace, monospace', overflow: 'auto', margin: 0 }} {...props}>{children}</code>
+      ),
+    pre: ({ children }) => <pre style={{ margin: 0, overflow: 'auto' }}>{children}</pre>,
+    ul: ({ children }) => <ul style={{ margin: 0, paddingLeft: '1.2em', color: baseColor }}>{children}</ul>,
+    ol: ({ children }) => <ol style={{ margin: 0, paddingLeft: '1.2em', color: baseColor }}>{children}</ol>,
+    li: ({ children }) => <li style={{ margin: 0 }}>{children}</li>,
+    blockquote: ({ children }) => (
+      <blockquote style={{ margin: 0, paddingLeft: '0.6em', borderLeft: `3px solid ${borderColor}`, color: mutedColor }}>{children}</blockquote>
+    ),
+    a: ({ href, children }) => (
+      <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: linkColor, textDecoration: 'underline' }}>{children}</a>
+    ),
+    hr: () => <hr style={{ border: 'none', borderTop: `1px solid ${borderColor}`, margin: 0 }} />,
+    table: ({ children }) => <div style={{ overflow: 'auto', margin: 0 }}><table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.9em' }}>{children}</table></div>,
+    thead: ({ children }) => <thead>{children}</thead>,
+    tbody: ({ children }) => <tbody>{children}</tbody>,
+    tr: ({ children }) => <tr>{children}</tr>,
+    th: ({ children }) => <th style={{ border: `1px solid ${borderColor}`, padding: '0.35em 0.5em', textAlign: 'left', fontWeight: 600, background: codeBg }}>{children}</th>,
+    td: ({ children }) => <td style={{ border: `1px solid ${borderColor}`, padding: '0.35em 0.5em', color: baseColor }}>{children}</td>,
+    del: ({ children }) => <del style={{ color: mutedColor }}>{children}</del>,
+  }
+
+  return (
+    <div className={className} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', ...style }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {text}
+      </ReactMarkdown>
+    </div>
+  )
+}
 
 const SOURCE_CONFIG = {
   pubmed: { label: 'PubMed', color: '#2563EB', icon: Microscope },
@@ -144,7 +200,7 @@ ${viewportText ? `Visible text: ${viewportText.slice(0, 800)}` : ''}`
         whiteSpace: 'pre-wrap',
       }}
     >
-      {summary.text}
+      <MarkdownRenderer text={summary.text} isDark={isDark} />
     </div>
   )
 }
@@ -439,7 +495,11 @@ Be precise, cite specific parts of the paper when possible, and flag limitations
                   style={{ maxHeight: 120 }}
                 />
               )}
-              {typeof msg.content === 'string' ? msg.content : msg.content?.[0]?.text || ''}
+              {typeof msg.content === 'string' ? (
+                <MarkdownRenderer text={msg.content} isDark={isDark} />
+              ) : (
+                <MarkdownRenderer text={msg.content?.[0]?.text || ''} isDark={isDark} />
+              )}
             </div>
           </motion.div>
         ))}
