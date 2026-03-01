@@ -359,8 +359,8 @@ function extractPaperFromPage() {
     document.querySelector('meta[name="citation_date"]')?.content?.slice(0, 4) ||
     ''
 
-  // Stable ID from URL
-  const id = btoa(unescape(encodeURIComponent(url))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)
+  // Use the full URL as the ID to guarantee uniqueness across all papers
+  const id = url
 
   return { id, title, authors, abstract, doi, journal, year, url, source }
 }
@@ -430,7 +430,7 @@ async function handleDefineWord(tabId, term, viewportContext, pageUrl) {
     messages: [{ role: 'user', content: userMsg }],
   })
 
-  const paperId = paper?.id || btoa(unescape(encodeURIComponent(pageUrl || 'unknown'))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)
+  const paperId = paper?.id || pageUrl || 'unknown'
   const chatMessages = storage.chatMessages || {}
   const list = chatMessages[paperId] || []
   const ts = Date.now()
