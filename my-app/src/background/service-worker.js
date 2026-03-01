@@ -183,6 +183,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: false, error: 'Empty term' })
       return true
     }
+
     let responded = false
     function reply(ok, errMsg) {
       if (responded) return
@@ -423,22 +424,64 @@ async function handleDefineWord(tabId, term, viewportContext, pageUrl) {
   const systemPrompt = `You are Bioscript, an expert academic research assistant. Define the given term concisely in the context of this paper. Be precise and brief (2–4 sentences).`
   const userMsg = `${paperContext} ${contextSnippet}\n\nDefine: "${term}"`
 
-  const definition = await handleLLMRequest({
-    apiKey,
-    model: storage.deepResearch ? 'gpt-4o' : 'gpt-4o-mini',
-    systemPrompt,
-    messages: [{ role: 'user', content: userMsg }],
-  })
-
   const paperId = paper?.id || btoa(unescape(encodeURIComponent(pageUrl || 'unknown'))).replace(/[^a-zA-Z0-9]/g, '').slice(0, 16)
   const chatMessages = storage.chatMessages || {}
   const list = chatMessages[paperId] || []
   const ts = Date.now()
-  list.push({ role: 'user', content: `define "${term}"`, timestamp: ts })
-  list.push({ role: 'assistant', content: definition, timestamp: ts + 1 })
+
+  // First, persist the user message and a temporary "thinking" assistant turn
+  list.push({ role: 'user', content: `Define "${term}"`, timestamp: ts })
+  list.push({ role: 'assistant', content: 'Thinking…', timestamp: ts + 1, isThinking: true })
   chatMessages[paperId] = list
   await new Promise((resolve) => chrome.storage.local.set({ chatMessages }, resolve))
   chrome.runtime.sendMessage({ type: 'CHAT_MESSAGES_UPDATED', paperId, chatMessages: list }).catch(() => {})
+
+  // Then call the LLM and replace the temporary assistant message with the real definition
+  let definition
+  try {
+    definition = await handleLLMRequest({
+      apiKey,
+      model: storage.deepResearch ? 'gpt-4o' : 'gpt-4o-mini',
+      systemPrompt,
+      messages: [{ role: 'user', content: userMsg }],
+    })
+  } catch (err) {
+    // Update the last assistant message with an error
+    const errorList = chatMessages[paperId] || list
+    const lastIdx = errorList.length - 1
+    if (lastIdx >= 0 && errorList[lastIdx].role === 'assistant') {
+      errorList[lastIdx] = {
+        role: 'assistant',
+        content: `Error defining "${term}": ${err && err.message ? err.message : 'Unknown error'}`,
+        timestamp: Date.now(),
+        isError: true,
+      }
+      chatMessages[paperId] = errorList
+      await new Promise((resolve) => chrome.storage.local.set({ chatMessages }, resolve))
+      chrome.runtime.sendMessage({ type: 'CHAT_MESSAGES_UPDATED', paperId, chatMessages: errorList }).catch(() => {})
+      return
+    }
+    throw err
+  }
+
+  const finalList = chatMessages[paperId] || list
+  const lastIdx = finalList.length - 1
+  if (lastIdx >= 0 && finalList[lastIdx].role === 'assistant') {
+    finalList[lastIdx] = {
+      role: 'assistant',
+      content: definition,
+      timestamp: Date.now(),
+    }
+  } else {
+    finalList.push({
+      role: 'assistant',
+      content: definition,
+      timestamp: Date.now(),
+    })
+  }
+  chatMessages[paperId] = finalList
+  await new Promise((resolve) => chrome.storage.local.set({ chatMessages }, resolve))
+  chrome.runtime.sendMessage({ type: 'CHAT_MESSAGES_UPDATED', paperId, chatMessages: finalList }).catch(() => {})
 }
 
 async function fetchPaperMetadata(url) {

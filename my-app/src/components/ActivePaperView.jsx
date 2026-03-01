@@ -12,9 +12,9 @@ import useStore from '../store/useStore'
 import { generateBibTeX, generateAPA } from '../lib/utils'
 
 // Full markdown renderer (bold, italic, headers, lists, code, links, tables, etc.) with compact styling
-function MarkdownRenderer({ text, isDark = false, className, style = {} }) {
+function MarkdownRenderer({ text, isDark = false, className, style = {}, primaryColor }) {
   if (text == null || typeof text !== 'string') return null
-  const baseColor = isDark ? '#D1D5DB' : '#374151'
+  const baseColor = primaryColor || (isDark ? '#D1D5DB' : '#374151')
   const mutedColor = isDark ? '#9CA3AF' : '#6B7280'
   const borderColor = isDark ? '#374151' : '#E5E7EB'
   const codeBg = isDark ? '#1F2937' : '#F3F4F6'
@@ -463,46 +463,79 @@ Be precise, cite specific parts of the paper when possible, and flag limitations
           </div>
         )}
 
-        {messages.map((msg, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-          >
-            <div
-              className="max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed"
-              style={{
-                background: msg.role === 'user'
-                  ? '#2563EB'
-                  : msg.isError
-                  ? '#FEF2F2'
-                  : isDark ? '#1A1A1A' : '#FFFFFF',
-                color: msg.role === 'user'
-                  ? 'white'
-                  : msg.isError
-                  ? '#B91C1C'
-                  : isDark ? '#D1D5DB' : '#374151',
-                border: msg.role === 'assistant' ? `1px solid ${isDark ? '#1F2937' : '#E5E7EB'}` : 'none',
-                whiteSpace: 'pre-wrap',
-              }}
+        {messages.map((msg, i) => {
+          // Special rendering for Define-thinking messages
+          if (msg.role === 'assistant' && msg.isThinking) {
+            return (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex justify-start"
+              >
+                <div
+                  className="px-3 py-2 rounded-xl flex items-center gap-2"
+                  style={{
+                    background: isDark ? '#1A1A1A' : '#FFFFFF',
+                    border: `1px solid ${isDark ? '#1F2937' : '#E5E7EB'}`,
+                  }}
+                >
+                  <Loader2 size={12} className="animate-spin" style={{ color: '#2563EB' }} />
+                  <span className="text-xs" style={{ color: '#9CA3AF' }}>Thinking…</span>
+                </div>
+              </motion.div>
+            )
+          }
+
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              {msg.image && (
-                <img
-                  src={msg.image}
-                  alt="Attached"
-                  className="w-full rounded-lg mb-2 object-cover"
-                  style={{ maxHeight: 120 }}
-                />
-              )}
-              {typeof msg.content === 'string' ? (
-                <MarkdownRenderer text={msg.content} isDark={isDark} />
-              ) : (
-                <MarkdownRenderer text={msg.content?.[0]?.text || ''} isDark={isDark} />
-              )}
-            </div>
-          </motion.div>
-        ))}
+              <div
+                className="max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed"
+                style={{
+                  background: msg.role === 'user'
+                    ? '#2563EB'
+                    : msg.isError
+                    ? '#FEF2F2'
+                    : isDark ? '#1A1A1A' : '#FFFFFF',
+                  color: msg.role === 'user'
+                    ? 'white'
+                    : msg.isError
+                    ? '#B91C1C'
+                    : isDark ? '#D1D5DB' : '#374151',
+                  border: msg.role === 'assistant' ? `1px solid ${isDark ? '#1F2937' : '#E5E7EB'}` : 'none',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                {msg.image && (
+                  <img
+                    src={msg.image}
+                    alt="Attached"
+                    className="w-full rounded-lg mb-2 object-cover"
+                    style={{ maxHeight: 120 }}
+                  />
+                )}
+                {typeof msg.content === 'string' ? (
+                  <MarkdownRenderer
+                    text={msg.content}
+                    isDark={isDark}
+                    primaryColor={msg.role === 'user' ? 'white' : undefined}
+                  />
+                ) : (
+                  <MarkdownRenderer
+                    text={msg.content?.[0]?.text || ''}
+                    isDark={isDark}
+                    primaryColor={msg.role === 'user' ? 'white' : undefined}
+                  />
+                )}
+              </div>
+            </motion.div>
+          )
+        })}
 
         {isLoading && (
           <div className="flex justify-start">
