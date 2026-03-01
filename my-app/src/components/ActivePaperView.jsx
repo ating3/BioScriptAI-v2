@@ -4,7 +4,7 @@ import {
   BookOpen, Zap, FileText, Quote, Bookmark, BookmarkCheck,
   Send, Image, X, ChevronDown, Layers, Target, AlertCircle,
   Copy, Check, Loader2, Microscope, Atom, Leaf, Brain, Dna, Globe,
-  Folder, FolderOpen, FolderPlus, Inbox, ScanSearch,
+  Folder, FolderOpen, FolderPlus, Inbox, ScanSearch, RotateCcw,
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -268,13 +268,14 @@ function FigurePickerSheet({ isDark, figures, onSelect, onClose }) {
 }
 
 function ChatInterface({ paper, isDark }) {
-  const { apiKey, chatMessages, addChatMessage, researchInterest, currentSection, viewportText, deepResearch } = useStore()
+  const { apiKey, chatMessages, addChatMessage, clearChat, researchInterest, currentSection, viewportText, deepResearch } = useStore()
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [attachedImage, setAttachedImage] = useState(null)
   const [capturedFigures, setCapturedFigures] = useState(null)
   const [capturingFigures, setCapturingFigures] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const messagesEndRef = useRef(null)
   const fileInputRef = useRef(null)
 
@@ -537,6 +538,64 @@ Be precise, cite specific parts of the paper when possible, and flag limitations
         </div>
       )}
 
+      {/* Clear chat confirmation modal */}
+      <AnimatePresence>
+        {showClearConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(4px)' }}
+            onClick={() => setShowClearConfirm(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+              className="w-full max-w-xs rounded-2xl overflow-hidden"
+              style={{
+                background: isDark ? '#111111' : '#FFFFFF',
+                border: `1px solid ${isDark ? '#1F2937' : '#E5E7EB'}`,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="p-4">
+                <div className="flex items-center gap-2.5 mb-3">
+                  <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#FEF2F2' }}>
+                    <RotateCcw size={14} style={{ color: '#DC2626' }} />
+                  </div>
+                  <p className="font-semibold text-sm" style={{ color: isDark ? '#F9FAFB' : '#111827' }}>Clear chat history?</p>
+                </div>
+                <p className="text-xs mb-4" style={{ color: '#6B7280' }}>
+                  This will erase all messages for this paper. This action cannot be undone.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowClearConfirm(false)}
+                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-colors"
+                    style={{
+                      background: isDark ? '#1F2937' : '#F3F4F6',
+                      color: isDark ? '#D1D5DB' : '#374151',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => { clearChat(paper.id); setShowClearConfirm(false) }}
+                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-colors"
+                    style={{ background: '#DC2626', color: 'white' }}
+                  >
+                    Clear history
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Figure picker sheet */}
       <AnimatePresence>
         {capturedFigures && (
@@ -585,6 +644,15 @@ Be precise, cite specific parts of the paper when possible, and flag limitations
           />
           <div className="flex items-center gap-1 pb-0.5">
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileInput} />
+            <button
+              onClick={() => setShowClearConfirm(true)}
+              disabled={messages.length === 0}
+              className="w-6 h-6 rounded-lg flex items-center justify-center transition-colors"
+              style={{ color: messages.length === 0 ? (isDark ? '#374151' : '#D1D5DB') : '#9CA3AF' }}
+              title="Clear chat history"
+            >
+              <RotateCcw size={13} />
+            </button>
             <button
               onClick={handleCaptureFigures}
               disabled={capturingFigures}
