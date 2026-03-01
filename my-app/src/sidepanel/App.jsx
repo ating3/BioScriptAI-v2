@@ -66,7 +66,11 @@ export default function App() {
     return () => chrome.runtime.onMessage.removeListener(handleMessage)
   }, [])
 
-  // Load persisted state from chrome.storage
+  // Load persisted state from chrome.storage, then enable the persist subscriber.
+  // The hydrated ref blocks the subscriber from writing empty initial state back to
+  // storage before the async read completes (which would wipe saved collections).
+  const hydrated = React.useRef(false)
+
   useEffect(() => {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
       chrome.storage.local.get(['apiKey', 'researchInterest', 'collections', 'folders', 'theme', 'chatMessages'], (result) => {
@@ -76,14 +80,18 @@ export default function App() {
         if (result.folders) useStore.setState({ folders: result.folders })
         if (result.theme) useStore.setState({ theme: result.theme })
         if (result.chatMessages && typeof result.chatMessages === 'object') useStore.setState({ chatMessages: result.chatMessages })
+        hydrated.current = true
       })
+    } else {
+      hydrated.current = true
     }
   }, [])
 
-  // Persist key state to chrome.storage. Don't write empty chatMessages or we overwrite
-  // definitions the background just wrote when the panel opens.
+  // Persist key state to chrome.storage. Guarded by hydrated so we never write
+  // the empty initial state over previously saved data on panel open.
   useEffect(() => {
     const unsub = useStore.subscribe((state) => {
+      if (!hydrated.current) return
       if (typeof chrome !== 'undefined' && chrome.storage?.local) {
         const payload = {
           apiKey: state.apiKey,
